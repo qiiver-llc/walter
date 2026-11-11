@@ -769,7 +769,7 @@ class Addons:
         archive = self.hub.archive(self.repo, commit)
         return self._install_from_archive(archive, entry["path"], aid, {
             "origin": "catalog", "repo": self.repo, "path": entry["path"], "commit": commit},
-            want_sha=entry["sha256"], want_perms=entry["permissions"])
+            want_sha=entry["sha256"], want_perms=entry["permissions"], update=update)
 
     # ---------------------------------------------------------- any public GitHub repo
     def preview_url(self, url: str) -> dict:
