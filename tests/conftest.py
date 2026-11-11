@@ -109,3 +109,10 @@ def example_workspaces(monkeypatch):
     import walter.workspaces as ws
     monkeypatch.setattr(ws, "SEED", copy.deepcopy(EXAMPLE_WORKSPACES))
     return copy.deepcopy(EXAMPLE_WORKSPACES)
+
+
+@_pytest.fixture(autouse=True)
+def _isolated_addons(tmp_path, monkeypatch):
+    """Add-ons (installed folders, enabled state, cloud-worker cache): never the real ~/.walter, so the
+    owner's own add-ons (their SKILL text, their routines) can't leak into a test."""
+    monkeypatch.setenv("WALTER_DATA", str(tmp_path / "walter-data"))

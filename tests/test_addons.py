@@ -547,6 +547,10 @@ def test_secret_drop_page_saves(two):
             urllib.request.urlopen("http://127.0.0.1:%d/wrong/" % srv.server_address[1])
         body = urllib.parse.urlencode({"k": "tok-123"}).encode()
         assert b"Done" in urllib.request.urlopen(local + "/", data=body).read()
+        for _ in range(50):          # the save callback runs on the server thread
+            if saved:
+                break
+            time.sleep(0.05)
         assert (two.secrets_dir / "boxes" / "token").read_text() == "tok-123\n" and saved == [1]
     finally:
         srv.shutdown()
