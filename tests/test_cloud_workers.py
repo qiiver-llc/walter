@@ -218,3 +218,14 @@ def test_workers_argv_checks_job_id_and_on(world):
     store.disable("fakecloud")
     with pytest.raises(A.AddonError):
         store.workers_argv("fakecloud", "list")
+
+
+def test_job_seen_running_then_ending_before_the_first_watch_is_still_reported(world):
+    cw, got = world["cw"], []
+    world["jobs"]([row(), row("old-1", state="failed")])
+    cw.refresh()                                            # e.g. `walterctl tasks` before the restart
+    world["jobs"]([row(state="done"), row("old-1", state="failed")])
+    world["clock"][0] += CW.POLL_S
+    cw.refresh()
+    assert cw.deliver(got.append) == 1                      # Walter's first pass: job-1 yes, old-1 no
+    assert [g["id"] for g in got] == ["fakecloud:job-1"]

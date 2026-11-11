@@ -201,11 +201,14 @@ class CloudWorkers:
                     jobs = normalize(self._run(m, "list", None, LIST_TIMEOUT), m["id"], m["name"])
                     for j in jobs:              # when it ended, as far as we can tell (for the face's fade-out)
                         p = prev.get(j["key"])
-                        if j["state"] in TERMINAL and not j["finished"]:
-                            if p and p.get("state") in TERMINAL:
-                                j["finished"] = p.get("finished")
-                            elif p or ent.get("ok"):   # watched it run, or it appeared since the last good list
-                                j["finished"] = now
+                        if j["state"] not in TERMINAL:
+                            continue
+                        if p and p.get("state") in TERMINAL:
+                            j["seen_end"] = bool(p.get("seen_end"))
+                            j["finished"] = j["finished"] or p.get("finished")
+                        elif p or ent.get("ok"):   # watched it run, or it appeared since the last good list
+                            j["seen_end"] = True
+                            j["finished"] = j["finished"] or now
                     ent["jobs"] = jobs
                     ent["ok"] = True
                 except subprocess.TimeoutExpired:
@@ -295,13 +298,12 @@ class CloudWorkers:
             if aid not in on or not isinstance(ent, dict) or not ent.get("ok"):
                 continue
             jobs = [j for j in ent.get("jobs") or [] if isinstance(j, dict) and j.get("key")]
-            if aid not in s["seen"]:            # first good list: what ended before we watched is history
+            if aid not in s["seen"]:            # first look: what ended before anyone watched is history
                 s["seen"][aid] = time.time()
                 for j in jobs:
-                    if j["state"] in TERMINAL:
+                    if j["state"] in TERMINAL and not j.get("seen_end"):
                         s["delivered"][j["key"]] = time.time()
                 changed = True
-                continue
             for j in jobs:
                 if j["state"] not in TERMINAL or j["key"] in s["delivered"]:
                     continue
