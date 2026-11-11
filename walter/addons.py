@@ -301,12 +301,16 @@ def coerce(setting: dict, value):
 
 
 # ------------------------------------------------------------------ deterministic pack (catalog sha256)
+PACK_SKIP = {".git", "__pycache__", ".DS_Store"}
+
+
 def pack(folder: Path) -> bytes:
     """The add-on folder as a deterministic tar; its sha256 is what the catalog's index.json lists.
 
     Exact rules (tools/pack.py in the catalog repo must match):
-      - every regular file under the folder, recursively; skip '.git' folders and a top-level '.source.json';
-        directories themselves are not entries; symlinks are refused
+      - every regular file under the folder, recursively; skip any path part named '.git', '__pycache__' or
+        '.DS_Store', files ending in '.pyc', and a top-level '.source.json'; directories themselves are not
+        entries; symlinks and special files are refused
       - entry name = the path relative to the folder, '/'-separated, no leading './'; sorted by name (bytes)
       - PAX format; mode 0o755 if the file has any execute bit else 0o644; uid = gid = 0; uname = gname = '';
         mtime = 0; no compression
@@ -314,14 +318,14 @@ def pack(folder: Path) -> bytes:
     folder = Path(folder)
     items = []
     for root, dirs, files in os.walk(folder):
-        dirs[:] = sorted(d for d in dirs if d != ".git")
+        dirs[:] = sorted(d for d in dirs if d not in PACK_SKIP)
         for d in dirs:
             if (Path(root) / d).is_symlink():
                 raise AddonError(f"the add-on contains a link ({d})", "link")
         for f in files:
             p = Path(root) / f
             rel = p.relative_to(folder).as_posix()
-            if rel == SOURCE:
+            if rel == SOURCE or f in PACK_SKIP or f.endswith(".pyc"):
                 continue
             if p.is_symlink() or not p.is_file():
                 raise AddonError(f"the add-on contains a link or special file ({rel})", "link")

@@ -246,6 +246,10 @@ def test_pack_is_deterministic(tmp_path):
     os.utime(b / "SKILL.md", (1, 1))
     assert A.pack_sha256(a) == A.pack_sha256(b)
     (b / A.SOURCE).write_text("{}")          # the install record is not part of it
+    (b / "bin" / "__pycache__").mkdir()
+    (b / "bin" / "__pycache__" / "x.pyc").write_text("junk")
+    (b / "bin" / "y.pyc").write_text("junk")
+    (b / ".DS_Store").write_text("junk")
     assert A.pack_sha256(a) == A.pack_sha256(b)
     (b / "SKILL.md").write_text("changed")
     assert A.pack_sha256(a) != A.pack_sha256(b)
