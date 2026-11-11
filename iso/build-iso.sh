@@ -48,12 +48,30 @@ mkdir -p "$WORK/walter"
 GIT=(git -c safe.directory="$ROOT" -C "$ROOT")
 if "${GIT[@]}" rev-parse --git-dir >/dev/null 2>&1; then
   "${GIT[@]}" ls-files -z | (cd "$ROOT" && tar --null -T - -cf -) | tar -xf - -C "$WORK/walter"
-  "${GIT[@]}" rev-parse --short HEAD > "$WORK/walter/VERSION"
+  # Built from a clean, release-tagged commit (vX.Y.Z, made by publish-release.sh)?
+  # Then VERSION is that release, so the box installs release-managed and the channel
+  # sees it as up to date. Otherwise the commit id: the box installs as a git copy and
+  # moves onto the newest signed release at its first update check.
+  TAG=$("${GIT[@]}" describe --exact-match --tags --match 'v[0-9]*.[0-9]*.[0-9]*' HEAD 2>/dev/null || true)
+  if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ && -z "$("${GIT[@]}" status --porcelain --untracked-files=no)" ]]; then
+    echo "${TAG#v}" > "$WORK/walter/VERSION"
+  else
+    "${GIT[@]}" rev-parse --short HEAD > "$WORK/walter/VERSION"
+  fi
 else
   [[ -d "$ROOT/.git" ]] && echo "warning: $ROOT has a .git but git can't read it; packing without VERSION" >&2
   tar -C "$ROOT" --exclude=.git --exclude=.venv --exclude=.iso-cache --exclude='__pycache__' -cf - . \
     | tar -xf - -C "$WORK/walter"
 fi
+
+# Update channel for installs from this stick (deploy/firstboot.sh passes it to
+# install.sh --channel): "default" = https://releases.wallter.app, the signed channel the
+# curl bootstrap uses; WALTER_ISO_CHANNEL=none builds a stick without automatic updates.
+CHANNEL="${WALTER_ISO_CHANNEL:-default}"
+[[ "$CHANNEL" == default || "$CHANNEL" == none || "$CHANNEL" == https://* ]] \
+  || { echo "WALTER_ISO_CHANNEL must be default, none or an https:// URL" >&2; exit 2; }
+printf '%s\n' "$CHANNEL" > "$WORK/walter/UPDATE_CHANNEL"
+echo "Update channel on this stick: $CHANNEL"
 
 # ------------------------------------------------------------ boot menus
 KARGS="auto=true priority=high preseed/file=/cdrom/preseed.cfg locale=en_US.UTF-8 keymap=us hostname=walter domain=local"

@@ -23,7 +23,9 @@
 # Options:
 #   --invite CODE            beta invite (stored; the first-run wizard's Cloud Link step uses it)
 #   --channel URL            update channel (same as WALTER_UPDATE_URL; bootstrap
-#                            default: https://releases.wallter.app)
+#                            default: https://releases.wallter.app). "default" = that
+#                            channel in any mode (the USB stick's first boot passes it),
+#                            "none" = no channel
 #   --permission-mode MODE   brain permission mode for a NEW config: acceptEdits (safer,
 #                            Walter can't run arbitrary commands, no self-programming) or
 #                            bypassPermissions (default: full power as the walter user)
@@ -48,6 +50,11 @@ while [[ $# -gt 0 ]]; do
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
+case "$UPDATE_URL" in
+  default) UPDATE_URL="$DEFAULT_UPDATE_URL" ;;   # same channel as the curl bootstrap
+  none|off) UPDATE_URL="" ;;
+esac
+[[ -z "$UPDATE_URL" || "$UPDATE_URL" == https://* ]] || { echo "the update channel must be https://" >&2; exit 2; }
 case "$PERMISSION_MODE" in ""|acceptEdits|bypassPermissions) ;;
   *) echo "--permission-mode must be acceptEdits or bypassPermissions" >&2; exit 2 ;; esac
 [[ "$INVITE" =~ ^[A-Za-z0-9._-]{0,128}$ ]] || { echo "invite code: letters, digits, . _ - only" >&2; exit 2; }
@@ -352,6 +359,7 @@ mkdir -p /etc/walter
 if [[ -n "$UPDATE_URL" ]] && ! grep -q '^WALTER_UPDATE_URL=' /etc/walter/update.conf; then
   printf 'WALTER_UPDATE_URL=%q\n' "$UPDATE_URL" >> /etc/walter/update.conf
 fi
+chown root:root /etc/walter/update.conf && chmod 644 /etc/walter/update.conf   # root's settings; Walter can't redirect updates
 # Beta invite code: kept for the first-run wizard's Cloud Link step (claimed only if the owner says so).
 if [[ -n "$INVITE" ]]; then
   printf '%s\n' "$INVITE" > /etc/walter/invite

@@ -5,6 +5,11 @@
 set -uo pipefail
 LOG=/var/log/walter-firstboot.log
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
+# Update channel, written by iso/build-iso.sh: "default" (the signed release channel,
+# exactly like the curl bootstrap), "none", or an https:// URL. Older sticks: default.
+CHANNEL=default
+[ -f "$SRC/UPDATE_CHANNEL" ] && CHANNEL=$(head -n1 "$SRC/UPDATE_CHANNEL" | tr -d '[:space:]')
+CHANNEL=${CHANNEL:-none}
 
 banner() {
   clear
@@ -121,7 +126,7 @@ while true; do
   echo "  Attempt $attempt  —  details are saved in $LOG"
   echo
   wait_for_internet
-  if WALTER_NONINTERACTIVE=1 "$SRC/deploy/install.sh" 2>&1 | tee -a "$LOG" | \
+  if WALTER_NONINTERACTIVE=1 "$SRC/deploy/install.sh" --channel "$CHANNEL" 2>&1 | tee -a "$LOG" | \
        grep --line-buffered '^==> ' | sed -u 's/^==> /  ✓ /'; [ "${PIPESTATUS[0]}" -eq 0 ]; then
     mkdir -p /var/lib/walter
     date -Is > /var/lib/walter/installed

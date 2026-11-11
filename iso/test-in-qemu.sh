@@ -125,8 +125,11 @@ for i in $(seq 1 40); do
 done
 (( ok && face )) || ok=0
 # The disk-safety settings (format without "write zeroes"/discard) must be in place.
-# The updater must not offer a rollback; a stick built without WALTER_UPDATE_URL /
-# WALTER_UPDATE_REPO has no update source at all, which is fine too.
+# The stick installs onto the signed release channel (like the curl bootstrap), so
+# update.conf must name it and the updater must see it: "up to date" (stick built from a
+# release tag) or "new release on the channel" (stick built from any other commit). If the
+# channel can't be reached from CI, the box is still configured right, so that passes too;
+# "no update source" (no channel at all) fails.
 if [[ "${VM_DEBUG:-0}" == 1 ]]; then
   echo "::group::disk safety settings"
   if ssh -i "$OUT_DIR/id" -p 10022 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
@@ -134,7 +137,9 @@ if [[ "${VM_DEBUG:-0}" == 1 ]]; then
         && [ "$(systemctl is-enabled fstrim.timer 2>&1)" = masked ] \
         && [ "$(cat /sys/fs/ext4/*/extent_max_zeroout_kb | sort -u)" = 0 ] && cat /proc/cmdline \
         && [ "$(systemctl is-enabled walter-update.timer)" = enabled ] && cat /var/lib/walter/upstream \
-        && /usr/local/sbin/walter-update --check | grep -E "up to date|no update source"' 2>&1; then
+        && grep -qx "WALTER_UPDATE_URL=https://releases.wallter.app" /etc/walter/update.conf \
+        && [ "$(stat -c %U:%a /etc/walter/update.conf)" = root:644 ] \
+        && /usr/local/sbin/walter-update --check | grep -E "up to date|new release on the channel|can.t reach the update channel"' 2>&1; then
     echo "disk safety settings: ok"
   else
     echo "disk safety settings: MISSING"; ok=0

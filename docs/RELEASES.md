@@ -27,6 +27,17 @@ The installer defaults to this channel only in bootstrap mode; re-running
 `deploy/install.sh` from a checkout never adds a channel (the owner's own box keeps its
 `/etc/walter/update.conf` as is).
 
+**USB installer.** `iso/build-iso.sh` writes `UPDATE_CHANNEL` (default `default`) into the
+stick, and its first boot runs `deploy/install.sh --channel default`, which writes the same
+root-owned `WALTER_UPDATE_URL=https://releases.wallter.app` line the bootstrap does (same
+nightly timer, same sha256 + signature check). `WALTER_ISO_CHANNEL=none` (or an https URL)
+at build time changes that. A stick built from a clean commit tagged `vX.Y.Z` installs as
+that release (release-managed, "up to date" on the channel). A stick built from any other
+commit installs as a plain git copy (VERSION = commit id) and moves onto the newest signed
+release at its first update check (about 15 minutes after boot; its git copy is kept as
+`legacy-...` for `walterctl update rollback`). That can be OLDER code than the stick, so
+publish a release first and build sticks from its tag.
+
 ## Cutting and publishing a release
 1. Commit everything (make-release refuses a dirty tree), run the test suite.
 2. `tools/release/publish-release.sh` (next patch after the newest `vX.Y.Z` tag) or
