@@ -179,3 +179,8 @@ enabled = false
 url = ""            # e.g. "http://homeassistant.local:8123"
 timeout_s = 6.0
 fastpath = true     # "turn off the kitchen lights" handled instantly
+
+# [addons]  (docs/ADDONS.md) where the add-ons catalog lives; installs are pinned to this repo's current commit
+# catalog = "https://raw.githubusercontent.com/qiiver-llc/walter-addons/main/index.json"
+# repo = "qiiver-llc/walter-addons"
+# branch = "main"
