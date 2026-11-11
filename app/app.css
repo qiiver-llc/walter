@@ -150,6 +150,8 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); }
 .card .d { color: var(--muted); font-size: 14px; white-space: pre-wrap; }
 .badge { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; margin-right: 6px; background: rgba(255,255,255,0.08); color: var(--muted); vertical-align: 1px; }
 .badge.running, .badge.progress { background: rgba(88,196,255,0.18); color: var(--accent); }
+.ad-ico { width: 1.15em; height: 1.15em; object-fit: contain; vertical-align: -0.2em; margin-right: 6px; border-radius: 3px; }
+.badge .ad-ico { width: 1.1em; height: 1.1em; margin-right: 4px; }
 .badge.done { background: rgba(138,255,193,0.14); color: var(--good); }
 .badge.failed, .badge.ask { background: rgba(255,210,122,0.14); color: var(--warn); }
 .item { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 4px 0 4px 4px; border-bottom: 1px solid var(--line); }

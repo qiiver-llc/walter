@@ -1449,6 +1449,10 @@
   // GET /api/app/workers/live: each worker's title, elapsed time and what it's doing right now
   // (walter/workerlive.py). Polled every 3 s while one of those screens is visible.
   // 404 = Walter from before the restart that added the route: "Needs one restart to enable".
+  // An add-on icon/favicon is only ever shown if it's one of the data: URIs Walter builds (walter/addonlook.py).
+  function safeIcon(u) {
+    return typeof u === "string" && u.length < 64000 && /^data:image\/(svg\+xml|png|x-icon|vnd\.microsoft\.icon);base64,[A-Za-z0-9+/=]+$/.test(u);
+  }
   const wlDur = (s) => { s = Math.max(0, Math.round(s)); if (s < 60) return s + "s"; const m = Math.floor(s / 60); return m < 60 ? m + " min" : Math.floor(m / 60) + "h " + String(m % 60).padStart(2, "0"); };
   async function checkLive() {
     const boxes = [$("wkLive"), $("wkLiveW")].filter(Boolean);
@@ -1467,7 +1471,11 @@
           const files = w.status === "running" && w.files ? ` \u00b7 ${w.files} file${w.files === 1 ? "" : "s"}` : "";
           const badge = w.status === "queued" ? "waiting" : w.status;
           // cloud jobs from an add-on ([workers], walter/cloudworkers.py): a small "cloud" marker + the add-on's name
-          const cloud = w.cloud ? `<span class="badge cloud">cloud \u00b7 ${esc(w.addon_name || w.addon || "")}</span>` : "";
+          // ...with the add-on's icon and colour when it has a [workers.look] (sanitized data: URI, walter/addonlook.py)
+          const lk = (w.look && typeof w.look === "object") ? w.look : {};
+          const ic = safeIcon(lk.icon_url) ? `<img class="ad-ico" alt="" src="${lk.icon_url}">` : "";
+          const tint = /^#[0-9a-fA-F]{6}$/.test(lk.color || "") ? ` style="border:1px solid ${lk.color}"` : "";
+          const cloud = w.cloud ? `<span class="badge cloud"${tint}>${ic}cloud \u00b7 ${esc(w.addon_name || w.addon || "")}</span>` : "";
           return `<div class="card"><div class="t"><span class="badge ${esc(w.status)}">${esc(badge)}</span>${cloud}${w.id && !w.cloud ? "#" + w.id + " " : ""}${esc(w.title || "")} <span class="muted small">${esc(el)}</span></div>` +
             `<div class="d">${esc((w.activity || "") + files)}</div></div>`;
         }).join("") || `<p class="muted small">No workers running right now.</p>`;
@@ -1628,7 +1636,7 @@
   }
   setupSW();
   // the expose for tests/debugging (headless checks drive the mic logic through this)
-  window.walterApp = { api, toast, startTalk, finishTalk, cancelTalk, token: () => token, state: () => ({ wsOpen, rec: !!rec, device, wall, audioCount, sw: !!swReg, build: loadedBuild }) };
+  window.walterApp = { api, toast, safeIcon, startTalk, finishTalk, cancelTalk, token: () => token, state: () => ({ wsOpen, rec: !!rec, device, wall, audioCount, sw: !!swReg, build: loadedBuild }) };
   if (token || isLocal()) start(); else showPair();
 })();
 

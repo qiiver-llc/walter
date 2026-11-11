@@ -43,6 +43,11 @@
   function closeSheet() { $("adSheet").classList.add("hidden"); }
   $("adSheet").addEventListener("click", (e) => { if (e.target.id === "adSheet") closeSheet(); });
 
+  // the add-on's favicon (or worker icon) beside its name: only Walter's own sanitized data: URIs
+  function fav(u) {
+    const ok = A.safeIcon ? A.safeIcon(u) : false;
+    return ok ? `<img class="ad-ico" alt="" src="${u}">` : "";
+  }
   function chips(perms) {
     if (!perms || !perms.length) return '<span class="ad-perm">No special permissions</span>';
     return perms.map((p) => `<span class="ad-perm${p.danger ? " danger" : ""}">${esc(p.label)}</span>`).join("");
@@ -80,7 +85,7 @@
     const more = open.has(a.id);
     let h = `<div class="ad-card${a.on ? " on" : ""}">
       <div class="ad-head"><button class="ad-main" data-open="${esc(a.id)}" aria-expanded="${more}">
-        <b>${esc(a.name)}</b> <span class="muted small">${esc(a.version)}${a.official ? "" : " &middot; not from Qiiver"}</span>
+        ${fav(a.favicon_url)}<b>${esc(a.name)}</b> <span class="muted small">${esc(a.version)}${a.official ? "" : " &middot; not from Qiiver"}</span>
         <span class="ad-desc small">${esc(a.description)}</span></button>
         <label class="ad-switch"><input type="checkbox" data-toggle="${esc(a.id)}" ${a.on ? "checked" : ""} aria-label="${esc(a.name)} on or off"><span></span></label></div>
       <div class="ad-perms">${chips(a.permissions)}</div>`;
@@ -196,7 +201,7 @@
     if (r.status !== 200) { $("adCatalog").innerHTML = `<p class="small ad-red">${esc(r.data.error || "Couldn't load the catalog.")}</p>`; return; }
     cat = r.data.addons || [];
     $("adCatalog").innerHTML = cat.length ? cat.map((e) => `<div class="ad-card${e.on ? " on" : ""}">
-      <div class="ad-head"><div class="ad-main"><b>${esc(e.name)}</b> <span class="muted small">${esc(e.version)}</span>
+      <div class="ad-head"><div class="ad-main">${fav(e.favicon_url)}<b>${esc(e.name)}</b> <span class="muted small">${esc(e.version)}</span>
         <span class="ad-desc small">${esc(e.description)}</span></div>
         ${e.update ? `<button class="btn small primary" data-cupdate="${esc(e.id)}">Update available</button>`
           : e.installed ? '<span class="muted small">Installed</span>'
@@ -227,7 +232,7 @@
     preview = { url, p: r.data.preview };
     const p = preview.p;
     $("adPreviewBox").innerHTML = `<div class="ad-card">
-      <div class="ad-head"><div class="ad-main"><b>${esc(p.name)}</b> <span class="muted small">${esc(p.version)}</span>
+      <div class="ad-head"><div class="ad-main">${fav(p.favicon_url)}<b>${esc(p.name)}</b> <span class="muted small">${esc(p.version)}</span>
       <span class="ad-desc small">${esc(p.description)}</span></div></div>
       <div class="ad-perms">${chips(p.permissions)}</div>
       <p class="muted small">${esc(p.repo)}${p.path ? "/" + esc(p.path) : ""} at ${esc(p.commit.slice(0, 10))}${p.author ? " &middot; by " + esc(p.author) : ""}</p>
