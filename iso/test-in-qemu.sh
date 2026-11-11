@@ -125,6 +125,8 @@ for i in $(seq 1 40); do
 done
 (( ok && face )) || ok=0
 # The disk-safety settings (format without "write zeroes"/discard) must be in place.
+# The updater must not offer a rollback; a stick built without WALTER_UPDATE_URL /
+# WALTER_UPDATE_REPO has no update source at all, which is fine too.
 if [[ "${VM_DEBUG:-0}" == 1 ]]; then
   echo "::group::disk safety settings"
   if ssh -i "$OUT_DIR/id" -p 10022 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
@@ -132,7 +134,7 @@ if [[ "${VM_DEBUG:-0}" == 1 ]]; then
         && [ "$(systemctl is-enabled fstrim.timer 2>&1)" = masked ] \
         && [ "$(cat /sys/fs/ext4/*/extent_max_zeroout_kb | sort -u)" = 0 ] && cat /proc/cmdline \
         && [ "$(systemctl is-enabled walter-update.timer)" = enabled ] && cat /var/lib/walter/upstream \
-        && /usr/local/sbin/walter-update --check | grep "up to date"' 2>&1; then
+        && /usr/local/sbin/walter-update --check | grep -E "up to date|no update source"' 2>&1; then
     echo "disk safety settings: ok"
   else
     echo "disk safety settings: MISSING"; ok=0

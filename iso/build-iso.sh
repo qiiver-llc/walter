@@ -43,10 +43,14 @@ echo "Using $ISO"
 # ------------------------------------------------------------ Walter payload
 say "Packing Walter"
 mkdir -p "$WORK/walter"
-if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-  git -C "$ROOT" ls-files -z | (cd "$ROOT" && tar --null -T - -cf -) | tar -xf - -C "$WORK/walter"
-  git -C "$ROOT" rev-parse --short HEAD > "$WORK/walter/VERSION"
+# safe.directory: in a CI container the checkout belongs to another uid, and git
+# then refuses the repo ("dubious ownership"), which silently dropped VERSION.
+GIT=(git -c safe.directory="$ROOT" -C "$ROOT")
+if "${GIT[@]}" rev-parse --git-dir >/dev/null 2>&1; then
+  "${GIT[@]}" ls-files -z | (cd "$ROOT" && tar --null -T - -cf -) | tar -xf - -C "$WORK/walter"
+  "${GIT[@]}" rev-parse --short HEAD > "$WORK/walter/VERSION"
 else
+  [[ -d "$ROOT/.git" ]] && echo "warning: $ROOT has a .git but git can't read it; packing without VERSION" >&2
   tar -C "$ROOT" --exclude=.git --exclude=.venv --exclude=.iso-cache --exclude='__pycache__' -cf - . \
     | tar -xf - -C "$WORK/walter"
 fi
