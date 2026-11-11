@@ -62,6 +62,15 @@ prompt = "... ${setting.translation} ..." # ${setting.KEY} = the owner's value o
 [workers]                                # optional: cloud jobs shown as background workers (needs run_commands)
 list = "bin/jobs.py list --json"         # required: prints a JSON array of jobs (below)
 fetch = "bin/jobs.py fetch {id} --json"  # optional: prints {"report": "...", ...} for one finished job
+
+[workers.look]                           # optional: how its jobs look on the face and in the app ("Look" below)
+color = "#c8923a"                        # #rrggbb
+shape = "hex"                            # diamond | ring | square | triangle | hex | star | drop
+icon = "assets/icon.svg"                 # small SVG inside the add-on (<= 8 KB)
+```
+
+```toml
+favicon = "assets/favicon.svg"           # optional, top level, any add-on: PNG / ICO (<= 32 KB) or SVG (<= 8 KB)
 ```
 
 Unknown permissions, bad ids, script paths outside the folder and so on make the add-on invalid: it
@@ -166,8 +175,8 @@ What the core does while such an add-on is ON:
 - **Shows the jobs** in `walterctl tasks` (`--json` gives `{"tasks", "cloud", "cloud_errors"}`),
   `walterctl tasks --live`, the Workers card on the face (`face/dashboard-workers.json`, a small cloud mark
   before the title; cloud jobs don't take a local worker slot: `running` counts local ones, `cloud_running`
-  the cloud ones), a cloud-blue rounded-diamond satellite orbiting the face per running cloud job, and the app's workers list (a "cloud" badge
-  with the add-on's name). Each row carries its `workspace`.
+  the cloud ones), a satellite orbiting the face per running cloud job (cloud-blue rounded diamond, or the add-on's look:
+  below), and the app's workers list (a "cloud" badge with the add-on's name and icon). Each row carries its `workspace`.
 - **Reports finished jobs**: when a job turns `done` or `failed`, the running Walter runs its `fetch` once
   (up to 5 min, in a thread; tried 3 times, then reported without it) and hands the report over as an
   ordinary `[background task finished ...]` turn ("Cloud task <addon>:<id> (from the <name> add-on) ...
@@ -175,6 +184,36 @@ What the core does while such an add-on is ON:
   Delivered jobs are remembered in `~/.walter/cloud-workers-state.json`, so a restart never repeats one.
   `stopped` jobs aren't reported. The first time an add-on is seen, jobs that had already ended are
   recorded without a report.
+
+### Look (`[workers.look]`) and favicons
+
+An add-on can give its cloud jobs their own look, and itself a small picture (`walter/addonlook.py`):
+
+- `[workers.look]` (a table inside `[workers]`): `color` (`#rrggbb`), `shape` (`diamond`, `ring`, `square`,
+  `triangle`, `hex`, `star`, `drop`) and `icon` (an `.svg` inside the add-on, 8 KB at most). It may also hold
+  `favicon` (same as the top-level one). Any of the three may be left out: colour defaults to cloud blue,
+  shape to `diamond`. An add-on without `[workers.look]` keeps the cloud-blue rounded diamond.
+- `favicon` (top level, any add-on, or inside `[workers.look]`): `.png` / `.ico` (32 KB at most, checked by
+  their first bytes) or `.svg` (8 KB). Without one, the app uses the worker `icon` if there is one.
+- Where it shows: each running job's satellite on the face takes the colour and shape, with the icon drawn
+  small on it (decoded once, cached; just the shape if it doesn't load; no wobble with reduced motion).
+  The Workers card shows the icon (or the cloud mark tinted in the colour) before the title and the add-on's
+  name before the step; the app's workers badge shows the icon; the app's Add-ons screens (installed,
+  Catalog, Add from a repo preview) show the favicon beside the name.
+- Plumbing: cloud rows in `face/dashboard-workers.json` and `/api/app/workers/live` carry
+  `"look": {"color", "shape", "icon_url"?}` (left out = default). `/api/app/addons` items carry `look` and
+  `favicon_url`; catalog entries carry `favicon_url` (from `index.json`'s `favicon`, re-checked by the core);
+  the repo preview fetches the favicon at the previewed commit. All pictures travel as `data:` URIs, so
+  there's no file route; the face and app only show `data:image/...;base64` URIs that match exactly.
+- **Safety.** Everything an add-on gives is untrusted. Paths must stay inside the add-on (no `..`, no
+  symlinks). SVGs are parsed and **rebuilt from an allowlist**: elements `svg g path circle rect ellipse
+  line polyline polygon defs linearGradient radialGradient stop title`, plain presentation attributes only;
+  no `script`, `style`, `foreignObject`, `image`, `use`, `a` or animation, no `on*` handlers, no `style`
+  attribute, no `href` except `#id` on a gradient, no `url(...)` except `url(#id)`, no `data:` /
+  `javascript:` / `@import`, no DOCTYPE or entities. An SVG that needed anything stripped makes the manifest
+  invalid (the add-on won't install; a hand-copied one shows as broken). A bad colour, shape or file does
+  the same. The catalog's `tools/validate.py` runs the same checks (`tools/look.py` is a copy of
+  `walter/addonlook.py`).
 
 ## Safety rules (core)
 
