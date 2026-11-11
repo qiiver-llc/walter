@@ -159,6 +159,13 @@ public_url = ""
 allow_lan = true      # home-network devices may open /app directly (plain http)
 max_talk_s = 60.0
 
+[cloud_link]
+# Cloud Link: the app from anywhere (docs/CLOUD-LINK.md). Off until
+# `walterctl cloud-link enable CODE`, which sets [app] public_url for you.
+api_base = "https://api.wallter.app"
+heartbeat_h = 6.0
+health_timeout_s = 60.0
+
 [feedback]
 # Beta feedback (app Settings > Feedback). Nothing is sent unless the owner taps
 # "Send to the Walter team". "" = keep it here and offer a file to email instead.

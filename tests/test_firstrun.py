@@ -96,7 +96,20 @@ def make(tmp_path, pending=True, done=False):
     cfg = SimpleNamespace(server=SimpleNamespace(port=8765), app=SimpleNamespace(public_url="http://w.test"))
     fr = F.FirstRun(cfg, sent.append, setup=None, etc=etc, data_dir=tmp_path / "data",
                     apply_config=lambda k, v: applied.append((k, v)), run=fake_run)
-    return SimpleNamespace(fr=fr, sent=sent, applied=applied, ran=ran, etc=etc, data=tmp_path / "data")
+    claims = []
+
+    class FakeLink:                    # walter.cloud_link.CloudLink stand-in: no network, no systemd
+        async def enable(self, code, replace=False):
+            from walter.cloud_link import CloudLinkError
+            claims.append(code)
+            if code != "beta123":
+                raise CloudLinkError("That invite code isn't valid.", "invalid_code")
+            return {"ok": True, "host": "bcdfg2345678.wallter.app", "url": "https://bcdfg2345678.wallter.app",
+                    "healthy": True}
+
+    fr.cloud_link = FakeLink
+    return SimpleNamespace(fr=fr, sent=sent, applied=applied, ran=ran, etc=etc, data=tmp_path / "data",
+                           claims=claims)
 
 
 def test_gating(tmp_path):
@@ -129,9 +142,11 @@ def test_actions_and_finish(tmp_path):
     assert ("brain.permission_mode", "acceptEdits") in e.applied
     assert json.loads((e.data / "speech.json").read_text()) == {"tts": "local", "stt": "local"}
     run(fr.handle("extras", {"data": {"teams": ["Mariners"], "podcasts": []}}))
-    r = run(fr.handle("cloudlink", {"data": {"want": True}}))
-    req = json.loads((e.etc / "firstrun" / "cloudlink-request.json").read_text())
-    assert req["invite"] == "BETA-123" and req["household"] == "The Testers"
+    r = run(fr.handle("cloudlink", {"data": {"want": True, "code": "nope42"}}))
+    assert not r["ok"] and "isn't valid" in r["message"] and fr.wizard.current == "cloudlink"
+    r = run(fr.handle("cloudlink", {"data": {"want": True}}))      # empty box: the installer's --invite code
+    assert r["ok"] and "bcdfg2345678.wallter.app" in r["message"] and e.claims == ["nope42", "beta123"]
+    assert fr.wizard.data("cloudlink") == {"enabled": True, "host": "bcdfg2345678.wallter.app"}
     run(fr.handle("skip", {"step": "pair"}))
     assert fr.wizard.current == "hello"
     fr.on_heard("hey walter hello")
@@ -143,12 +158,22 @@ def test_actions_and_finish(tmp_path):
     assert any(x["event"] == "first_talk" for x in lines)
 
 
-def test_cloudlink_no_network_calls(tmp_path, monkeypatch):
+def test_cloudlink_step_no_network_calls_with_a_fake_link(tmp_path, monkeypatch):
     import aiohttp
     monkeypatch.setattr(aiohttp, "ClientSession", lambda *a, **k: (_ for _ in ()).throw(AssertionError("network")))
     e = make(tmp_path)
     assert run(e.fr.handle("cloudlink", {"data": {"want": True}}))["ok"]
     assert e.ran == []
+
+
+def test_cloudlink_skip_and_no_code(tmp_path):
+    e = make(tmp_path)
+    (e.etc / "invite").unlink()
+    e.fr.wizard.goto("cloudlink")
+    r = run(e.fr.handle("cloudlink", {"data": {"want": True, "code": "  "}}))
+    assert not r["ok"] and "invite code" in r["message"] and e.claims == []
+    run(e.fr.handle("cloudlink", {"data": {"want": False}}))
+    assert e.fr.wizard.status("cloudlink") == "skipped" and e.claims == []
 
 
 # ------------------------------------------------------------ endpoints

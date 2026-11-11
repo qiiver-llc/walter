@@ -84,6 +84,7 @@ def unit_dir() -> Path:
 class Paths:
     data: Path = field(default_factory=data_dir)
     units: Path = field(default_factory=unit_dir)
+    system_units: Path = Path("/etc/systemd/system")
 
     @property
     def key(self) -> Path:
@@ -312,7 +313,7 @@ def systemctl(*args: str, timeout: float = 30) -> tuple[int, str]:
 def existing_tunnels(paths: Paths, public_url: str, our_host: str = "") -> list[str]:
     """Reasons this install already has its own tunnel for the app ([] = none)."""
     found = []
-    for d in (paths.units, Path("/etc/systemd/system")):
+    for d in (paths.units, paths.system_units):
         try:
             files = sorted(d.glob("*.service"))
         except OSError:
@@ -327,7 +328,9 @@ def existing_tunnels(paths: Paths, public_url: str, our_host: str = "") -> list[
             if re.search(r"^\s*ExecStart=.*cloudflared.*\btunnel\b", txt, re.M):
                 found.append(f"the {f.name} tunnel unit ({d})")
     pub = (public_url or "").strip().rstrip("/").lower()
-    if pub.startswith("https://") and (not our_host or pub != f"https://{our_host}"):
+    # a Cloud Link household address (12-char random slug) is ours from an earlier enable
+    ours = bool(re.fullmatch(r"https://[bcdfghjkmnpqrstvwxz][bcdfghjkmnpqrstvwxz2-9]{11}\.wallter\.app", pub))
+    if pub.startswith("https://") and not ours and (not our_host or pub != f"https://{our_host}"):
         found.append(f"the app address is already set to {public_url}")
     return found
 
@@ -444,7 +447,7 @@ class CloudLink:
         if st.get("enabled"):
             raise CloudLinkError(f"Cloud Link is already on at https://{st.get('host')}.", "already_on")
         current_url = self._get_url()
-        others = existing_tunnels(self.paths, current_url)
+        others = existing_tunnels(self.paths, current_url, st.get("host") or st.get("last_host") or "")
         if others and not replace:
             raise CloudLinkError("This Walter already has its own tunnel for the app: " + "; ".join(others) +
                                  ". Cloud Link would replace that address. To go ahead anyway, use --replace "
@@ -471,7 +474,10 @@ class CloudLink:
             await asyncio.to_thread(self.stop_unit)
             self.paths.tunnel.unlink(missing_ok=True)
             raise
-        prev = st.get("previous_public_url") if st.get("host") == host else current_url
+        if st.get("host") == host:
+            prev = st.get("previous_public_url") or ""
+        else:   # never "restore" to the link's own address later
+            prev = "" if current_url.strip().rstrip("/").lower() == f"https://{host}" else current_url
         new = {"enabled": True, "slug": slug, "host": host, "install_id": api.ident.install_id,
                "enabled_at": int(time.time()), "previous_public_url": prev or "",
                "replaced": others if replace else [], "remote_status": d.get("status") or "active",
