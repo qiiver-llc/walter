@@ -227,6 +227,8 @@ class FirstRun:
     def phone_url(self) -> str:
         from .setup import lan_ip
         base = (getattr(getattr(self.cfg, "app", None), "public_url", "") or "").rstrip("/")
+        if base.lower().endswith(".wallter.app"):
+            base = ""      # a Cloud Link address carries only /app and /api/app/*, not /firstrun
         if not base:
             base = f"http://{lan_ip() or 'walter.local'}:{self.cfg.server.port}"
         return f"{base}/firstrun?k={self.key}"
@@ -500,7 +502,9 @@ class FirstRun:
         if self.pair_store is None:
             return self._fail("The phone app isn't enabled on this Walter.")
         p = self.pair_store.start_pairing()
-        base = self.phone_url().split("/firstrun")[0]
+        # the app itself goes through any public address (Cloud Link carries /app)
+        base = ((getattr(getattr(self.cfg, "app", None), "public_url", "") or "").rstrip("/")
+                or self.phone_url().split("/firstrun")[0])
         link = f"{base}/app/#pair={p['code']}"
         self.wizard.goto("pair")
         self.announce(pair={"code": p["code"], "link": link})   # big code + QR on the wall

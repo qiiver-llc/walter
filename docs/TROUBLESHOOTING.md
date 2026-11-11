@@ -142,8 +142,9 @@ Avoid stacking many restarts: most settings apply live with `walterctl config re
 - **Cause:** Walter's laptop is off or offline, the tunnel connector stopped, or the link isn't
   switched on yet (beta: the team turns it on).
 - **Fix:** check Walter is online at home. `walterctl security status` shows the tunnel state.
-  Restart the connector if your install has one (`systemctl --user list-units 'walter-tunnel*'`;
-  then `systemctl --user restart walter-tunnel`). Still down:
+  `walterctl cloud-link status` shows whether the connector runs; restart it with
+  `systemctl --user restart walter-cloud-link` (an older hand-made tunnel: `walter-tunnel`).
+  `walterctl cloud-link rotate` gets a fresh token (docs/CLOUD-LINK.md). Still down:
   send feedback with diagnostics; the team checks the tunnel from their side. (Self-service
   tunnel repair: **planned**.)
 
