@@ -314,8 +314,13 @@ def _cfg() -> dict:
 
 
 class Snapshotter:
-    def __init__(self, data_dir: Path | None = None, cwd: str | Path | None = None):
+    def __init__(self, data_dir: Path | None = None, cwd: str | Path | None = None,
+                 cloud: bool | str = "background"):
+        """cloud: how to get add-on cloud jobs (walter/cloudworkers.py): "background" = from the cache,
+        refreshing it in a thread when stale; True = wait for a stale cache to refresh; False = cache only."""
         self.data = Path(data_dir or DATA)
+        self.cloud_mode = cloud
+        self._cloud = None
         cfg = _cfg()
         b = cfg.get("brain", {}) if isinstance(cfg.get("brain"), dict) else {}
         self.cwd = str(cwd or b.get("home") or (self.data / "home"))
@@ -367,6 +372,7 @@ class Snapshotter:
         for tid in list(self.trackers):
             if tid not in live_ids:
                 self.trackers.pop(tid, None)
+        out += self.cloud_rows(now)
         rem = _read_json(self.data / "reminders.json", [])
         for r in rem if isinstance(rem, list) else []:
             m = re.match(r"QUEUED \[([^\]]+)\]", str((r or {}).get("text") or ""))
@@ -378,7 +384,22 @@ class Snapshotter:
         order = {"running": 0, "queued": 1}
         out.sort(key=lambda r: (order.get(r["status"], 2), r.get("started") or 0))
         return {"updated": now, "max_tasks": self.max_tasks,
-                "running": sum(1 for r in out if r["status"] == "running"), "workers": out}
+                "running": sum(1 for r in out if r["status"] == "running" and not r.get("cloud")), "workers": out}
+
+    def cloud_rows(self, now: float) -> list[dict]:
+        """Add-on cloud jobs (Teak boxes, ...) as rows: running/queued ones, and ended ones for DONE_KEEP_S."""
+        try:
+            from walter import cloudworkers as CW
+            if self._cloud is None:
+                self._cloud = CW.CloudWorkers(self.data)
+            rows = []
+            for j in self._cloud.jobs(self.cloud_mode):
+                fin = j.get("finished")
+                if j["state"] in ("running", "queued") or (fin and now - fin < DONE_KEEP_S):
+                    rows.append(CW.live_row(j, now))
+            return rows
+        except Exception:  # noqa: BLE001  (never let an add-on break the workers card)
+            return []
 
 
 def write_atomic(path: Path, data: dict) -> None:

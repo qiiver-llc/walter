@@ -58,6 +58,12 @@ when = "daily ${setting.time}"           # daily | weekdays | weekends | mon,wed
 prompt = "... ${setting.translation} ..." # ${setting.KEY} = the owner's value of that setting
 ```
 
+```toml
+[workers]                                # optional: cloud jobs shown as background workers (needs run_commands)
+list = "bin/jobs.py list --json"         # required: prints a JSON array of jobs (below)
+fetch = "bin/jobs.py fetch {id} --json"  # optional: prints {"report": "...", ...} for one finished job
+```
+
 Unknown permissions, bad ids, script paths outside the folder and so on make the add-on invalid: it
 won't install (and a hand-copied one shows as "broken").
 
@@ -134,6 +140,41 @@ is the kill switch.
   5 s; no restart. A `when` that doesn't parse after `${setting.KEY}` is filled in (a bad time setting) is
   skipped with a log line. Routines have no workspace (global).
 
+## Cloud workers (`[workers]`)
+
+An add-on that runs jobs somewhere else (the Teak add-on: Claude Code in teak.sh cloud boxes) can make them
+look and behave like Walter's own background workers (`walter/cloudworkers.py`).
+
+- `list`: the first word is a script inside the add-on, the rest are its arguments (split like a shell, no
+  shell runs). It prints a JSON array, one object per job:
+  `{"id", "title", "state", "started", "workspace", "step", "box"}`. `id`: letters, digits, `._:-`, up to
+  80. `state`: `queued | running | done | failed | stopped` (a few aliases like `completed`, `error`,
+  `cancelled` are understood; anything else is skipped). `started`: epoch seconds or ISO time. `workspace`:
+  the Walter workspace id the job belongs to (project boards filter on it). `step`: one short line of what
+  it's doing. Optional `finished`.
+- `fetch`: `{id}` (a word of its own) is replaced by the job id. Prints JSON with a `report` string (the
+  worker's final message plus anything Walter should know, such as where the results are).
+- Both run from the add-on's folder with the usual environment (`WALTER_ADDON_DATA`, ...), only while the
+  add-on is ON.
+
+What the core does while such an add-on is ON:
+
+- **Polls `list` at most once a minute**, never on the voice loop: a 20 s limit, a shared cache in
+  `~/.walter/cloud-workers.json` (a file lock keeps two processes from running it at once). Bad JSON, a
+  non-zero exit or a timeout is logged and the last good list kept. Everything it prints is untrusted data:
+  titles and steps are cleaned and capped, odd ids and states dropped.
+- **Shows the jobs** in `walterctl tasks` (`--json` gives `{"tasks", "cloud", "cloud_errors"}`),
+  `walterctl tasks --live`, the Workers card on the face (`face/dashboard-workers.json`, a small cloud mark
+  before the title; cloud jobs don't take a local worker slot) and the app's workers list (a "cloud" badge
+  with the add-on's name). Each row carries its `workspace`.
+- **Reports finished jobs**: when a job turns `done` or `failed`, the running Walter runs its `fetch` once
+  (up to 5 min, in a thread; tried 3 times, then reported without it) and hands the report over as an
+  ordinary `[background task finished ...]` turn ("Cloud task <addon>:<id> (from the <name> add-on) ...
+  Worker's report: ..."), the report inside `<untrusted>` tags, deferred like any worker's report.
+  Delivered jobs are remembered in `~/.walter/cloud-workers-state.json`, so a restart never repeats one.
+  `stopped` jobs aren't reported. The first time an add-on is seen, jobs that had already ended are
+  recorded without a report.
+
 ## Safety rules (core)
 
 - Installs are pinned to one commit: catalog installs fetch `index.json` and the add-on folder at the
@@ -162,6 +203,8 @@ catalog's `tools/pack.py` implement the same rules.
 ~/.walter/addons-secrets/<id>/<key>    secrets
 ~/.walter/addons-mcp.json              MCP servers of the add-ons that are ON
 ~/.walter/addons-data/<id>/            an add-on's own files (WALTER_ADDON_DATA)
+~/.walter/cloud-workers.json           cached [workers] lists (<= 60 s old)
+~/.walter/cloud-workers-state.json     cloud jobs already reported (+ fetch retries)
 ~/.walter/reminders.json               add-on routines live here too, tagged "addon": "<id>"
 ~/.walter/config.toml [addons]         catalog = "<index.json URL>", repo = "owner/repo", branch = "main"
 ```

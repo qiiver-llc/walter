@@ -140,6 +140,12 @@ async def amain(args):
     conductor.reminders = reminders       # the local fast path sets reminders itself
 
     def task_finished(item):
+        if item.get("cloud"):   # an add-on's cloud job (walter/cloudworkers.py); its report is wrapped as untrusted
+            from .cloudworkers import finish_text
+            conductor.inbox.put_nowait(("task", finish_text(item)))
+            conductor.notify_app("task", f"{item['title']} ({item.get('addon_name') or item.get('addon')})",
+                                 f"Cloud task {item['status']}: {item['title']}")
+            return
         if item.get("quiet"):   # e.g. the sleep-time review: it only writes notes, nothing to say
             log.info("quiet task #%s %s: %s", item["id"], item["status"], (item.get("result") or "")[:200])
             return
@@ -149,6 +155,9 @@ async def amain(args):
                              f"Task #{item['id']} {item['status']}: {item['title']}")
 
     tasks = Tasks(cfg, task_finished, lambda n: hub.send({"t": "jobs", "n": n}))
+    from .cloudworkers import CloudWorkers, Watcher as CloudWatcher
+    cloud_watch = CloudWatcher(task_finished, CloudWorkers(cfg.data_dir))   # add-on [workers]: polls <= once a minute
+    cloud_watch.start()
     from .sleeplearn import SleepLearner
     conductor.sleeplearn = SleepLearner(cfg, tasks, cfg.data_dir / "sleep-review.json",
                                         Path(__file__).resolve().parent.parent / "face" / "usage.json")
@@ -263,6 +272,7 @@ async def amain(args):
         ("loops", lambda: [t.cancel() for t in loops]),
         ("realtime", realtime.shutdown),
         ("tasks", tasks.close),
+        ("cloud workers", cloud_watch.close),
         ("brain", brain.close),
         ("face sockets", lambda: close_sockets(hub.clients)),
         ("app sockets", (lambda: close_sockets(apphub.clients)) if apphub is not None else None),

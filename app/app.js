@@ -1466,7 +1466,9 @@
           const el = w.status === "running" ? wlDur(now - (w.started || now)) : w.status === "queued" ? "waiting" : wlDur(w.elapsed || 0);
           const files = w.status === "running" && w.files ? ` \u00b7 ${w.files} file${w.files === 1 ? "" : "s"}` : "";
           const badge = w.status === "queued" ? "waiting" : w.status;
-          return `<div class="card"><div class="t"><span class="badge ${esc(w.status)}">${esc(badge)}</span>${w.id ? "#" + w.id + " " : ""}${esc(w.title || "")} <span class="muted small">${esc(el)}</span></div>` +
+          // cloud jobs from an add-on ([workers], walter/cloudworkers.py): a small "cloud" marker + the add-on's name
+          const cloud = w.cloud ? `<span class="badge cloud">cloud \u00b7 ${esc(w.addon_name || w.addon || "")}</span>` : "";
+          return `<div class="card"><div class="t"><span class="badge ${esc(w.status)}">${esc(badge)}</span>${cloud}${w.id && !w.cloud ? "#" + w.id + " " : ""}${esc(w.title || "")} <span class="muted small">${esc(el)}</span></div>` +
             `<div class="d">${esc((w.activity || "") + files)}</div></div>`;
         }).join("") || `<p class="muted small">No workers running right now.</p>`;
       }

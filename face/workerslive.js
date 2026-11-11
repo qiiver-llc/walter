@@ -22,6 +22,8 @@
   #workers .job.failed .tt { color: rgba(255,170,150,0.6); }
   #workers .job.queued .tt, #workers .job.queued .act { color: rgba(255,210,122,0.5); }
   #workers .job.fade { opacity: 0.25; }
+  .wl-cloud { display: inline-block; width: 1.25em; height: 0.8em; margin-right: 0.35em; vertical-align: -0.05em;
+    opacity: 0.75; fill: currentColor; }
   body.wl-night #workers { filter: saturate(0.4); opacity: 0.55 !important; }
   body.wl-dark #workers { opacity: 0 !important; visibility: hidden; }
   #dash .wlive { display: none; }
@@ -57,6 +59,9 @@
     const m = Math.floor(s / 60);
     return m < 60 ? m + " min" : Math.floor(m / 60) + "h " + String(m % 60).padStart(2, "0");
   };
+  // cloud jobs from an add-on ([workers] in its addon.toml, walter/cloudworkers.py): a little cloud before the title
+  const CLOUD = '<svg class="wl-cloud" viewBox="0 0 24 16" aria-label="cloud"><path d="M19 15H6a5 5 0 0 1-.6-9.96A7 7 0 0 1 18.7 6 4.5 4.5 0 0 1 19 15z"/></svg>';
+  const cloudMark = (w) => (w.cloud ? CLOUD : "");
   const inHours = (h, r) => r[0] > r[1] ? (h >= r[0] || h < r[1]) : (h >= r[0] && h < r[1]);
 
   async function load() {
@@ -96,7 +101,7 @@
     const b = document.body.classList, hr = new Date().getHours();
     b.toggle("wl-dark", inHours(hr, [23, 5]));
     b.toggle("wl-night", !inHours(hr, [23, 5]) && inHours(hr, [22, 8]));
-    const nRun = rs.filter((w) => w.status === "running").length;
+    const nRun = rs.filter((w) => w.status === "running" && !w.cloud).length;   // cloud jobs don't use a slot here
     // top-right panel
     if (!rs.length) { el.style.opacity = 0; }
     else {
@@ -106,7 +111,7 @@
         const mark = w.status === "done" ? "✓ " : w.status === "queued" ? "⏳ " : w.status === "running" ? "" : "✗ ";
         let act = w.activity || "";
         if (w.status === "running" && w.files) act += (act ? " · " : "") + w.files + (w.files === 1 ? " file" : " files");
-        h += '<div class="job ' + cls + (w.since > FADE_AFTER ? " fade" : "") + '"><span class="tt">' + mark + esc(w.title) +
+        h += '<div class="job ' + cls + (w.since > FADE_AFTER ? " fade" : "") + '"><span class="tt">' + mark + cloudMark(w) + esc(w.title) +
           '<span class="t">' + esc(w.el) + "</span></span>" + (act ? '<span class="act">' + esc(act) + "</span>" : "") + "</div>";
       }
       el.innerHTML = h; el.style.opacity = 1;
@@ -121,7 +126,7 @@
     for (const w of rs.slice(0, 4)) {
       const cls = w.status === "running" ? "" : w.status === "queued" ? "queued" : w.status === "done" ? "done" : "failed";
       const mark = w.status === "done" ? "✓ " : w.status === "queued" ? "⏳ " : w.status === "running" ? "" : "✗ ";
-      h += '<div class="r ' + cls + (w.since > FADE_AFTER ? " fade" : "") + '"><span class="ti">' + mark + esc(w.title) +
+      h += '<div class="r ' + cls + (w.since > FADE_AFTER ? " fade" : "") + '"><span class="ti">' + mark + cloudMark(w) + esc(w.title) +
         '</span><span class="ac">' + esc(w.activity || "") + '</span><span class="el">' + esc(w.el) + "</span></div>";
     }
     card.innerHTML = h; card.classList.add("on");

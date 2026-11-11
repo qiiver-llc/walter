@@ -35,7 +35,7 @@ Walter uses this himself (it's on his PATH), and you can use it over SSH.
                                         several full installs as one brain (docs/CLUSTER.md)
                                         run a long job in the background; Walter
                                         hears the result when it's done
-  walterctl tasks                       list background tasks
+  walterctl tasks [--json]              list background tasks (+ add-on cloud jobs, marked "cloud")
   walterctl tasks --live [--json]       what each worker is doing right now (last step, files edited)
   walterctl tasks --priority            CPU/IO priority of running workers vs Walter's own voice service
   walterctl diagnostics [--out FILE] [--json]
@@ -2229,7 +2229,7 @@ def main(argv):
         # what each worker is doing right now (from its live transcript; no restart needed)
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
         from walter.workerlive import Snapshotter
-        snap = Snapshotter().snapshot()
+        snap = Snapshotter(cloud=True).snapshot()
         if "--json" in rest:
             print(json.dumps(snap, indent=1))
         elif not snap["workers"]:
@@ -2237,7 +2237,8 @@ def main(argv):
         for w in ([] if "--json" in rest else snap["workers"]):
             el = f"{w['elapsed'] // 60}m{w['elapsed'] % 60:02d}s" if w["status"] != "queued" else ""
             files = f", {w['files']} file(s) edited" if w["files"] else ""
-            print(f"#{w['id'] or '-'}  {w['status']:<9} {el:>7}  {w['title']}")
+            wid = f"cloud {w.get('addon') or ''}" if w.get("cloud") else f"#{w['id'] or '-'}"
+            print(f"{wid}  {w['status']:<9} {el:>7}  {w['title']}")
             print(f"      {w['activity']}{files}")
     elif cmd == "tasks" and rest[:1] == ["--priority"]:
         # running walter-task-N units (and walter.service for comparison): CPUWeight, IOWeight, Nice
@@ -2263,12 +2264,33 @@ def main(argv):
         board_cmd(rest)
     elif cmd == "tasks":
         wst, _ = _task_workspace(None, quiet=True)
-        for r in call("GET", "/api/tasks"):
+        items = call("GET", "/api/tasks")
+        # cloud jobs of add-ons with a [workers] section (walter/cloudworkers.py; list cached <= 60 s)
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+        try:
+            from walter import cloudworkers as _cw
+            _cwo = _cw.CloudWorkers()
+            cloud = _cwo.jobs(refresh=True)
+            cloud_err = _cwo.errors()
+        except Exception as e:  # noqa: BLE001
+            cloud, cloud_err = [], {"cloud workers": str(e)[:200]}
+        if "--json" in rest:
+            print(json.dumps({"tasks": items, "cloud": cloud, "cloud_errors": cloud_err}, indent=1))
+            return
+        for r in items:
             tag = (wst.task_workspace(r) or "-") if wst else ""
             print(f"#{r['id']}  {r['status']:<9} {dt.datetime.fromtimestamp(r['started']):%a %H:%M}  "
                   + (f"[{tag}] " if wst else "") + r["title"])
             if r.get("result") and r["status"] != "running":
                 print("      " + r["result"][:200].replace("\n", " "))
+        for j in cloud:
+            when = f"{dt.datetime.fromtimestamp(j['started']):%a %H:%M}" if j.get("started") else "--- --:--"
+            print(f"cloud {j['state']:<9} {when}  " + (f"[{j.get('workspace') or '-'}] " if wst else "")
+                  + f"{j['title']}  ({j['addon_name']}: {j['job']})")
+            if j.get("step"):
+                print("      " + j["step"])
+        for aid, err in cloud_err.items():
+            print(f"(cloud workers from {aid}: {err})")
     elif cmd == "cancel-task":
         print(call("DELETE", f"/api/tasks/{int(rest[0])}"))
     elif cmd == "cancel":

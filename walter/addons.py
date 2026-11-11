@@ -24,6 +24,7 @@ import json
 import logging
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -308,10 +309,63 @@ def validate_manifest(raw: dict, folder: Path | None = None) -> tuple[dict, list
                     continue
             m["routines"].append({"when": r["when"][:60], "prompt": r["prompt"][:2000]})
 
+    workers = raw.get("workers")
+    m["workers"] = None
+    if workers is not None:
+        m["workers"] = _workers_section(workers, folder, m["permissions"], errs)
+
     if folder is not None:
         if not (folder / "SKILL.md").is_file():
             errs.append("SKILL.md is missing")
     return m, errs
+
+
+WORKER_JOB_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$")
+
+
+def _workers_section(w, folder: Path | None, perms: list[str], errs: list[str]) -> dict | None:
+    """[workers] list = "bin/x list --json" (required), fetch = "bin/x fetch {id} --json" (optional): cloud
+    jobs shown as background workers (walter/cloudworkers.py). The first word is a script in the add-on;
+    {id} (fetch only, a word of its own) is the job id."""
+    if not isinstance(w, dict):
+        errs.append("[workers] must be a table with list = \"...\"")
+        return None
+    out: dict = {}
+    bad = sorted(set(w) - {"list", "fetch"})
+    if bad:
+        errs.append(f"[workers] {bad[0]}: unknown key (only list and fetch)")
+    if "list" not in w:
+        errs.append("[workers] needs list = \"...\"")
+    if "run_commands" not in perms:
+        errs.append("[workers] runs the add-on's scripts: it needs the run_commands permission")
+    for k in ("list", "fetch"):
+        if k not in w:
+            continue
+        v = w[k]
+        try:
+            words = shlex.split(v) if isinstance(v, str) and len(v) <= 300 else []
+        except ValueError:
+            words = []
+        if not words:
+            errs.append(f"[workers] {k} must be a command like \"bin/jobs.py {k}\"")
+            continue
+        if not _rel_ok(words[0]):
+            errs.append(f"[workers] {k}: {words[0]} must be a relative path inside the add-on")
+            continue
+        if folder is not None and not (folder / words[0]).is_file():
+            errs.append(f"[workers] {k}: {words[0]} is not in the add-on")
+            continue
+        if any(re.search(r"\{[^}]*\}", x) and x != "{id}" for x in words):
+            errs.append(f"[workers] {k}: the only placeholder is {{id}}, as a word of its own")
+            continue
+        if k == "list" and "{id}" in words:
+            errs.append("[workers] list takes no {id}")
+            continue
+        if k == "fetch" and "{id}" not in words:
+            errs.append("[workers] fetch needs {id}")
+            continue
+        out[k] = words[:20]
+    return out if "list" in out else None
 
 
 def read_manifest(folder: Path) -> tuple[dict, list[str]]:
@@ -689,6 +743,7 @@ class Addons:
                 "settings": self.settings_of(m["id"], m, st),
                 "secrets": [{**s, "set": self._secret_path(m["id"], s["key"]).is_file()} for s in m["secrets"]],
                 "cli": sorted(m["cli"]), "mcp": bool(m.get("mcp")), "routines": len(m.get("routines", [])),
+                "workers": bool(m.get("workers")),
                 "official": src.get("origin") == "catalog",
                 "source": {k: src.get(k) for k in ("origin", "repo", "path", "commit", "installed_at") if k in src}}
 
@@ -1107,6 +1162,32 @@ class Addons:
         return res
 
     # ---------------------------------------------------------- scripts
+    def workers_argv(self, aid: str, which: str, job: str | None = None) -> tuple[list[str], dict, Path]:
+        """argv, env, cwd for the add-on's [workers] list / fetch (walter/cloudworkers.py). Only while ON."""
+        m = self.installed(aid)
+        if m is None or not m.get("workers") or which not in m["workers"]:
+            raise AddonError(f"'{aid}' has no [workers] {which}", "bad_cmd")
+        if aid not in self.state()["enabled"]:
+            raise AddonError(f"{m['name']} is off", "off")
+        words = list(m["workers"][which])
+        if which == "fetch":
+            if not isinstance(job, str) or not WORKER_JOB_RE.match(job):
+                raise AddonError("bad job id", "bad_id")
+            words = [job if x == "{id}" else x for x in words]
+        base = (self.dir / aid).resolve()
+        script = (base / words[0]).resolve()
+        if not script.is_relative_to(base) or not script.is_file():
+            raise AddonError("the [workers] script is missing", "bad_cmd")
+        if os.access(script, os.X_OK):
+            argv = [str(script)]
+        elif script.suffix == ".py":
+            argv = [sys.executable, str(script)]
+        elif script.suffix in (".sh", ".bash"):
+            argv = ["bash", str(script)]
+        else:
+            raise AddonError("the [workers] script isn't executable", "bad_cmd")
+        return argv + words[1:], dict(os.environ, **self.addon_env(aid, m)), base
+
     def addon_env(self, aid: str, m: dict, st: dict | None = None) -> dict:
         return {"WALTER_ADDON_ID": aid, "WALTER_ADDON_DIR": str(self.dir / aid),
                 "WALTER_ADDON_DATA": str(self.addon_data_dir / aid),

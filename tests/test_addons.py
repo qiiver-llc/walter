@@ -219,6 +219,36 @@ def test_manifest_rejects(patch, needle):
     assert any(needle in e for e in errs), errs
 
 
+@pytest.mark.parametrize("workers,needle", [
+    ({"fetch": "bin/status.sh fetch {id}"}, "needs list"),
+    ({"list": "../x.sh"}, "relative path"),
+    ({"list": "bin/status.sh {id}"}, "takes no {id}"),
+    ({"list": "bin/status.sh", "fetch": "bin/status.sh fetch"}, "fetch needs {id}"),
+    ({"list": "bin/status.sh {name}"}, "only placeholder"),
+    ({"list": "bin/status.sh", "stop": "bin/status.sh stop {id}"}, "unknown key"),
+    ("bin/status.sh", "must be a table"),
+])
+def test_manifest_workers_rejects(workers, needle):
+    raw = {"id": "ok-id", "name": "Ok", "version": "1.0.0", "description": "d", "permissions": ["run_commands"],
+           "workers": workers}
+    m, errs = A.validate_manifest(raw)
+    assert any(needle in e for e in errs), errs
+
+
+def test_manifest_workers_valid_and_needs_run_commands(tmp_path):
+    raw = {"id": "ok-id", "name": "Ok", "version": "1.0.0", "description": "d", "permissions": ["run_commands"],
+           "workers": {"list": "bin/status.sh list --json", "fetch": "bin/status.sh fetch {id} --json"}}
+    m, errs = A.validate_manifest(raw)
+    assert errs == [] and m["workers"] == {"list": ["bin/status.sh", "list", "--json"],
+                                           "fetch": ["bin/status.sh", "fetch", "{id}", "--json"]}
+    _, errs = A.validate_manifest({**raw, "permissions": []})
+    assert any("run_commands" in e for e in errs)
+    write_tree(tmp_path, {"addon.toml": TEAK_TOML + '[workers]\nlist = "bin/missing.py"\n', "SKILL.md": "x\n",
+                          "bin/status.sh": "#!/bin/sh\n", "bin/server.py": ""})
+    _, errs = A.read_manifest(tmp_path)
+    assert any("[workers] list: bin/missing.py is not in the add-on" in e for e in errs)
+
+
 def test_manifest_folder_needs_skill_and_scripts(tmp_path):
     write_tree(tmp_path, {"addon.toml": TEAK_TOML})
     _, errs = A.read_manifest(tmp_path)
