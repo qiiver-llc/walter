@@ -1,0 +1,6 @@
+[Unit]
+Description=Publish Walter's backlog checklist to the face
+
+[Service]
+Type=oneshot
+ExecStart=%h/walter/bin/walter-checklist

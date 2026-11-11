@@ -1,0 +1,174 @@
+# Walter's settings. Copied to ~/.walter/config.toml on install.
+# Restart after editing:  systemctl --user restart walter
+
+[server]
+host = "127.0.0.1"      # set "0.0.0.0" to reach walterctl / the face from other devices (no auth!)
+port = 8765
+
+[brain]
+claude_bin = "claude"
+model = ""              # "" = Claude Code's default; e.g. "sonnet" for faster, cheaper replies
+# Automatic model switching: small talk on fast_model, hard turns (planning, code,
+# research, "think hard") on deep_model. Override live: walterctl brain fast|deep|auto
+fast_model = ""         # "" = model
+deep_model = "opus"
+auto_switch = true
+# Headless Claude Code can't stop and ask permission, so pick a non-prompting mode.
+# Beta preset (fresh installs, see docs/SECURITY.md): "acceptEdits" + the allow list
+# below + the deny list. Check it any time: walterctl security status
+#  "acceptEdits"       = file edits + the tools in allowed_tools only. Safer: a web page,
+#                        email or calendar invite can't talk him into arbitrary commands.
+#  "bypassPermissions" = Walter can run anything as the walter user (needed to fully
+#                        self-program). RISK: prompt injection from anything he reads;
+#                        with admin rights (off by default) that would be root. Tinkerers only.
+# disallowed_tools binds in every mode (bypass too): keep it even if you switch.
+permission_mode = "acceptEdits"
+allowed_tools = ["Bash(walterctl:*)", "Bash(~/walter/bin/*)", "Bash(~/.walter/home/skills/*)", "Bash(date:*)", "Bash(ls:*)", "Bash(cat:*)", "Bash(grep:*)", "Bash(git status:*)", "Bash(git log:*)", "Bash(git diff:*)", "Bash(python3 -m py_compile:*)", "WebSearch", "WebFetch", "mcp__google-accounts"]
+disallowed_tools = ["Bash(sudo:*)", "Bash(su:*)", "Bash(pkexec:*)", "Bash(doas:*)", "Bash(curl:* | sh*)", "Bash(curl:* | bash*)", "Bash(wget:* | sh*)", "Bash(wget:* | bash*)", "Bash(bash <(curl:*)", "Bash(sh -c *curl*)", "Bash(rm -rf /:*)", "Bash(rm -rf /*)", "Bash(rm -rf ~:*)", "Bash(rm -rf ~/*)", "Bash(rm -rf $HOME:*)", "Bash(dd:*)", "Bash(mkfs:*)", "Bash(shred:*)", "Bash(chmod -R 777:*)", "Edit(/etc/**)", "Write(/etc/**)", "Bash(tee /etc/:*)", "Read(~/.ssh/**)", "Edit(~/.ssh/**)", "Write(~/.ssh/**)", "Bash(ssh-keygen:*)", "Read(~/.walter/secrets/**)", "Bash(cat ~/.walter/secrets/:*)", "Read(~/.walter/google-mcp/credentials/**)", "Read(~/.walter/devices.json)", "Read(~/.config/gh/**)", "Read(~/.claude/.credentials.json)", "Bash(git push:*)", "Bash(gh repo delete:*)"]
+home = "~/.walter/home" # his CLAUDE.md, memory and skills live here
+turn_timeout = 600
+max_tasks = 3           # background workers running at once ("walterctl task")
+task_timeout = 3600
+task_model = ""         # e.g. "opus" for heavy background work while chat uses "sonnet"
+
+[ears]
+enabled = true
+device = ""             # "" = default mic. List devices: .venv/bin/python -m sounddevice
+whisper_model = "base.en"   # "tiny.en" if the laptop is very slow, "small.en" if it's fast
+whisper_compute = "int8"
+# whisper_threads = 0   # CPU threads per pass (0 = default); 2 was fastest on a 2-core i7
+# whisper_nice = 10     # whisper runs at this niceness so the voice and PipeWire win the CPU
+# While Walter talks, barge-in checks transcribe only the newest audio, and only when
+# it's clearly louder than his own echo (else a slower safety check):
+# barge_in_window_s = 3.0
+# barge_in_energy_ratio = 1.6   # 0 = no loudness gate
+# barge_in_recheck_s = 3.0      # 0 = never check quieter audio
+# Optional bigger model for the final transcript of each turn (live captions keep
+# using whisper_model). "" = whisper_model for both. "small.en" roughly halves the
+# word errors but needs ~6.5 CPU-seconds per 4 s sentence: about 3 s on a 2-core
+# laptop vs ~1 s for base.en, so only worth it on 4+ fast cores.
+# Measure on your machine: .venv/bin/python bin/asr-bench
+final_model = ""
+# Vocabulary hints: names and unusual words whisper should expect, spelled the way
+# you want them written ("Siobhan", not "Shivon"): your household, pets, town,
+# street... Keep it to a dozen or two.
+hotwords = ["Walter", "Claude", "GitHub"]
+vad_aggressiveness = 2  # 0-3, higher ignores more background noise
+end_silence_ms = 800    # quiet that ends your turn when the words give no hint
+max_utterance_s = 90    # longest turn; long turns are transcribed as you go, every ~12 s
+beam_size = 3           # final transcript accuracy (1 = fastest)
+# Ambient-noise filtering (defaults shown; uncomment to tune):
+# noise_gate_ratio = 1.5     # speech must stay this many times louder than the room to keep an utterance going (ends runaway segments in fan noise); 0 = off
+# min_speech_ms = 200        # ignore blips with less real speech than this
+# silero_vad = true          # stronger second VAD pass before whisper
+# silero_threshold = 0.5     # 0-1, higher = stricter
+# max_no_speech_prob = 0.7   # whisper: drop segments that are probably silence
+# min_avg_logprob = -1.0     # whisper: drop segments it is very unsure about (-1.2 = more lenient)
+# max_compression_ratio = 2.4  # whisper: drop repetitive hallucinations
+# Live transcription (defaults shown):
+# live_partials = true       # transcribe while you talk: reacts to his name at once, shows your words on the face
+# partial_interval_s = 1.2   # how often to re-transcribe (a busy partial is skipped, never queued)
+# partial_max_s = 15         # no live updates past this length (keeps CPU down on long monologues)
+# early_final = true         # start the final transcription early, after 0.3 s of silence
+# Smarter end of turn (defaults shown): the live transcript decides how long a pause ends your turn.
+# adaptive_end_of_turn = true      # false = always wait end_silence_ms, like before
+# end_silence_complete_ms = 700    # it sounds finished ("What's the time?", "Lights off.")
+# end_silence_unfinished_ms = 2000 # it trails off ("and", "um", "because", "the", a comma, "...")
+wake_words = ["walter", "wolter", "walther", "hey walt"]
+require_wake_word = true
+followup_window_s = 12  # after Walter speaks you can answer without saying his name
+
+[voice]
+enabled = true
+device = ""
+# British butler by default. Others: en_GB-northern_english_male-medium,
+# en_US-ryan-medium, en_US-joe-medium  (https://rhasspy.github.io/piper-samples/)
+piper_model = "~/.walter/voices/en_GB-alan-medium.onnx"
+length_scale = 1.0      # 1.1 = a bit slower
+volume = 1.0
+pitch = 1.0           # <1 deeper, >1 higher
+laugh_sounds = true   # [laugh] / [laugh:big] also play a real chuckle from sounds/laugh/
+
+[speech]
+# Local or cloud speech. Switch live with: walterctl voice local|openai,
+# walterctl ears local|openai (remembered in ~/.walter/speech.json, which wins
+# over the two lines below). Key: ~/.walter/secrets/openai.key or $OPENAI_API_KEY.
+tts_provider = "local"
+stt_provider = "local"
+tts_model = "gpt-4o-mini-tts"   # or "tts-1"
+tts_voice = "ash"               # warm male: ash, onyx, echo, ballad
+tts_speed = 1.0                 # tts-1 only
+tts_timeout_s = 6.0             # slower than this: piper says the sentence
+stt_model = "gpt-4o-mini-transcribe"   # or "whisper-1"
+# Cost safety: past a cap that side falls back to local (0 = no cap)
+max_tts_chars_per_day = 20000
+max_stt_seconds_per_day = 1800
+max_tts_chars_per_month = 300000
+max_stt_seconds_per_month = 30000
+
+[life]
+heartbeat_minutes = 120 # Walter checks in on his own after this long idle (0 = never)
+quiet_hours = [23, 6]   # may doze off from 23:00 to 06:00; mic is muted while he sleeps, Space wakes him
+sleep_after_idle_min = 15  # ...once nobody has talked to him for this long
+captions = false        # subtitles under Walter
+
+[senses]
+# Webcam presence: Walter notices when someone walks in and dozes when the room is empty.
+# Frames are looked at in memory at 320x240, about once a second, and never saved or sent;
+# no face recognition unless you switch it on below. The camera is off during quiet hours.
+# Turn it off any time: camera = false here, or `walterctl camera off` until restart.
+camera = false
+camera_device = "0"     # /dev/video0
+fps = 1.0
+arrive_after_min = 10   # someone appearing after this long unseen = an arrival (perk up, maybe say hi)
+empty_after_min = 15    # nobody seen for this long: doze (the mic stays on)
+greet_cooldown_min = 30 # at most one arrival greeting this often
+# Who is there: recognise enrolled people by face and/or voice. Opt-in per person
+# ("walterctl enroll face NAME", "walterctl enroll voice NAME"); only embeddings
+# (numbers, never images or audio) are kept, in ~/.walter/people. Nothing leaves
+# this computer. "walterctl people" lists them, "walterctl forget NAME" deletes.
+# Models: .venv/bin/python -m walter.people fetch
+recognise_faces = false
+recognise_voices = false
+
+[dashboard]
+# Dashboard mode: while Walter sleeps he shrinks into a corner and the screen shows a clock,
+# weather, today's and tomorrow's calendar, your list and his own status.
+enabled = true
+lat = 51.4779           # weather location: put your own latitude/longitude here
+lon = -0.0015
+list_title = "My list"  # e.g. "Sam's list"
+dark_hours = [23, 5]    # between these hours only a dim clock shows
+# Phone page (http://<this computer's address>:8765/dashboard/add, also a QR code on the
+# dashboard): add and tick off items from a phone on your home Wi-Fi. Only answers devices
+# on a private home network, and only for the list. false = this computer only.
+phone_page = true
+# Optional extras (all off by default):
+# sports_teams = ["nfl/gb", "mlb/nyy"]   # ESPN "league/team" slugs; [] hides the row
+# hs_teams = [ { sport = "football", school = "Example", class = "B", sid = 1, abbr = "EXA" } ]
+# calendar_colors = { Main = "#5fa8ff", Family = "#6fd49a" }   # fixed colours per calendar label
+# verse_line = false     # show today's "Verse: <text> - <reference>" note under the clock
+
+[app]
+# Companion app for phone and computer at http://<walter-ip>:8765/app (app/README.md).
+# Pair a device with `walterctl pair`. Every app request needs a paired device's token.
+enabled = true
+# Where pairing QR codes point once HTTPS is set up (Tailscale serve / Cloudflare Tunnel),
+# e.g. "https://walter-laptop.tail1234.ts.net". "" = http://<lan-ip>:<port> (no phone mic).
+public_url = ""
+allow_lan = true      # home-network devices may open /app directly (plain http)
+max_talk_s = 60.0
+
+[feedback]
+# Beta feedback (app Settings > Feedback). Nothing is sent unless the owner taps
+# "Send to the Walter team". "" = keep it here and offer a file to email instead.
+endpoint = ""
+
+[homeassistant]
+# Optional bridge to an EXISTING Home Assistant (docs/HOME-ASSISTANT.md).
+# Token goes in ~/.walter/secrets/homeassistant.token via `walterctl ha connect` (phone page).
+# Locks, garage doors, gates and alarm panels always need a spoken yes first.
+enabled = false
+url = ""            # e.g. "http://homeassistant.local:8123"
+timeout_s = 6.0
+fastpath = true     # "turn off the kitchen lights" handled instantly

@@ -1,0 +1,6 @@
+[Unit]
+Description=Walter admin request from USB stick %I (physical presence)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/walter-admin usb /dev/%I

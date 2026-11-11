@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""Compare local voices offline: piper (as configured) and Kokoro voices, same sentence.
+
+Synthesises the sentence with Walter's real Synth (current [voice] settings for
+piper), prints synthesis time, audio length and real-time factor (RTF = synth
+time / audio time; under 1 is faster than real time), saves WAVs and plays them
+one after another with pw-play (or aplay). Works without the service running or
+restarted; `walterctl voice demo-local` uses it when the running service is older.
+
+    .venv/bin/python bin/kokoro-demo [--voices am_michael,am_puck,am_fenrir]
+                                     [--text "..."] [--no-play] [--save DIR] [--runs N]
+"""
+from __future__ import annotations
+
+import argparse
+import shutil
+import subprocess
+import sys
+import time
+import wave
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from walter.config import load  # noqa: E402
+from walter.kokoro import DEMO_VOICES  # noqa: E402
+from walter.voice import Synth  # noqa: E402
+
+TEXT = ("Right then, it's about forty degrees out this afternoon, so grab a jacket. "
+        "Honestly, I'd skip the long walk.")
+
+
+def save(path: Path, audio, sr: int):
+    with wave.open(str(path), "wb") as f:
+        f.setnchannels(1)
+        f.setsampwidth(2)
+        f.setframerate(sr)
+        f.writeframes(audio.tobytes())
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--voices", default=",".join(DEMO_VOICES))
+    ap.add_argument("--text", default=TEXT)
+    ap.add_argument("--no-play", action="store_true")
+    ap.add_argument("--save", default="/tmp/walter-voice-demo")
+    ap.add_argument("--dir", default="", help="another Kokoro model folder (e.g. fp32)")
+    ap.add_argument("--runs", type=int, default=1, help="synthesise each N times (timing)")
+    a = ap.parse_args()
+    cfg = load()
+    if a.dir:
+        cfg.voice.kokoro_dir = a.dir
+    out = Path(a.save)
+    out.mkdir(parents=True, exist_ok=True)
+    synth = Synth(cfg)          # piper as configured (engine is whatever config says)
+    t0 = time.monotonic()
+    kok = synth.kokoro or synth.load_kokoro(a.voices.split(",")[0])
+    print(f"kokoro load: {time.monotonic() - t0:.1f} s ({cfg.voice.kokoro_dir})")
+    clips = []
+    jobs = [("piper", None, f"Piper, my voice now. {a.text}")]
+    jobs += [("kokoro", v, f"Kokoro {v.split('_', 1)[-1].capitalize()}. {a.text}")
+             for v in a.voices.split(",") if v]
+    for engine, voice, text in jobs:
+        if engine == "kokoro" and kok is None:
+            print(f"{voice}: Kokoro not available")
+            continue
+        best = None
+        for _ in range(max(1, a.runs)):
+            t = time.monotonic()
+            if engine == "piper":
+                audio, sr, _w = synth.synth_timed(text)
+            else:
+                audio, sr, _w = synth.kokoro_timed(text, kok, voice)
+            el = time.monotonic() - t
+            best = el if best is None else min(best, el)
+        dur = len(audio) / sr
+        name = voice or "piper"
+        print(f"{name:11s} synth {best:5.2f} s  audio {dur:5.2f} s  RTF {best / dur:.2f}")
+        p = out / f"{name}.wav"
+        save(p, audio, sr)
+        clips.append(p)
+    print(f"saved in {out}")
+    if a.no_play:
+        return
+    player = shutil.which("pw-play") or shutil.which("aplay")
+    if not player:
+        print("no pw-play/aplay to play them")
+        return
+    for p in clips:
+        subprocess.run([player, str(p)], check=False)
+        time.sleep(0.4)
+
+
+if __name__ == "__main__":
+    main()

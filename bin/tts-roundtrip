@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""Round-trip test for Walter's voice: text -> TagStream -> Synth -> whisper -> diff.
+
+Feeds brain-style replies (with tags) through TagStream in random small chunks
+(checking the sentences come out identical and in order), synthesises each
+sentence with the real Synth and voice config, transcribes the audio with
+faster-whisper (same hotwords/prompt as the ears) and prints the word diffs.
+
+    .venv/bin/python bin/tts-roundtrip [--model base.en] [--compare] [--save DIR]
+                                       [--text "one-off sentence"]
+
+--compare also runs every sentence with the pitch shift off, so artefacts from
+the resampler show up as a difference in word error rate.
+"""
+from __future__ import annotations
+
+import argparse
+import difflib
+import random
+import re
+import sys
+import time
+import wave
+from pathlib import Path
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from walter.config import load  # noqa: E402
+from walter.ears import hint_prompt  # noqa: E402
+from walter.tags import TagStream, speech_text  # noqa: E402
+from walter.voice import Synth, resample  # noqa: E402
+
+REPLIES = [
+    "[calm] It's 9:32 a.m. on Wednesday, Nov. 4th. [action:nod] Emma's piano lesson starts at 10:15.",
+    "[happy] Maria's calendar says the game is at 6:30 p.m., so you've got time.",
+    "[curious] Want me to check example-owner/example-repo on GitHub? It has two new issues.",
+    "It costs $3.50, about 15% more than last year (roughly $0.45 extra).",
+    "Three things: milk, eggs and bread. Anything else?",
+    "[thinking] Hmm... I'm not sure — maybe Mr. Smith knows? e.g. ask him tomorrow.",
+    "The forecast for Portland, OR is 45°F with winds of 10-15 mph.",
+    "[excited] [action:bounce] It's DONE! The build passed in 2 min 30 s.",
+    "Smith won 58.3% to 41.7%, with 1,234,567 votes counted.",
+    "Your reminder is set for 7:45 AM tomorrow (Thursday).",
+    "Restarting now... I'll be back in about 5 seconds.",
+    "\"Quoted\" words and 'single quotes' shouldn't trip me up.",
+    "It's nine thirty-two in the morning, and Maria is driving to Springfield.",
+    "1. Open the app\n2. Tap Settings\n3. Turn on captions",
+    "I set it to 0.9 pitch and a 1.1 length scale; sound OK? 🙂",
+    "Version 2.1.3 of the U.S. app is out vs. the old one, etc. so update it.",
+]
+
+
+def norm(s: str) -> list[str]:
+    s = s.lower().replace("’", "'")
+    s = re.sub(r"[^a-z0-9' ]+", " ", s)
+    return s.split()
+
+
+def wer(ref: list[str], hyp: list[str]) -> float:
+    d = list(range(len(hyp) + 1))
+    for i in range(1, len(ref) + 1):
+        prev, d[0] = d[0], i
+        for j in range(1, len(hyp) + 1):
+            cur = min(d[j] + 1, d[j - 1] + 1, prev + (ref[i - 1] != hyp[j - 1]))
+            prev, d[j] = d[j], cur
+    return d[len(hyp)] / max(1, len(ref))
+
+
+def chunked(text: str, rng: random.Random):
+    i = 0
+    while i < len(text):
+        n = rng.randint(1, 6)
+        yield text[i:i + n]
+        i += n
+
+
+def stream_events(text: str, chunks) -> list:
+    ts = TagStream()
+    out = []
+    for c in chunks:
+        out += ts.feed(c)
+    return out + ts.flush()
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--model", default=None)
+    ap.add_argument("--compare", action="store_true")
+    ap.add_argument("--save", default="")
+    ap.add_argument("--text", action="append", default=[])
+    a = ap.parse_args()
+    cfg = load()
+    from faster_whisper import WhisperModel
+    model = WhisperModel(a.model or cfg.ears.whisper_model, device="cpu",
+                         compute_type=cfg.ears.whisper_compute)
+    hot = " ".join(cfg.ears.hotwords) or None
+    prompt = hint_prompt(cfg.ears.hotwords)
+    synth = Synth(cfg)
+    print(f"engine={synth.kind} pitch={cfg.voice.pitch} length_scale={cfg.voice.length_scale}")
+
+    # 1. TagStream: random chunking must give the same events as one big feed
+    rng = random.Random(4)
+    bad = 0
+    for reply in REPLIES:
+        whole = stream_events(reply, [reply])
+        for _ in range(50):
+            got = stream_events(reply, chunked(reply, rng))
+            if got != whole:
+                bad += 1
+                print("CHUNKING MISMATCH:", reply, "\n  whole:", whole, "\n  got:  ", got)
+                break
+    print(f"TagStream chunking: {len(REPLIES) - bad}/{len(REPLIES)} replies stable")
+
+    def transcribe(audio, sr):
+        x = resample(audio.astype(np.float32) / 32768.0, sr, 16000)
+        segs, _ = model.transcribe(x.astype(np.float32), language="en", beam_size=1,
+                                   condition_on_previous_text=False, initial_prompt=prompt,
+                                   hotwords=hot)
+        return " ".join(s.text.strip() for s in segs)
+
+    sentences = []
+    for reply in a.text or REPLIES:
+        for kind, val in stream_events(reply, [reply]):
+            if kind == "say":
+                sentences.append(val)
+
+    tot = {"shift": [], "flat": []}
+    save = Path(a.save) if a.save else None
+    if save:
+        save.mkdir(parents=True, exist_ok=True)
+    for i, s in enumerate(sentences):
+        spoken = speech_text(s)
+        t0 = time.monotonic()
+        audio, sr = synth.synth(s)
+        took = time.monotonic() - t0
+        heard = transcribe(audio, sr)
+        e = wer(norm(spoken), norm(heard))
+        tot["shift"].append(e)
+        line = f"[{e:5.0%}] {s!r}"
+        if spoken != s:
+            line += f"\n        spoken as: {spoken!r}"
+        line += f"\n        heard:     {heard!r}  ({len(audio) / sr:.1f}s audio, {took:.2f}s synth)"
+        if e > 0:
+            sm = difflib.SequenceMatcher(a=norm(spoken), b=norm(heard))
+            diffs = [f"{' '.join(norm(spoken)[i1:i2])!r}->{' '.join(norm(heard)[j1:j2])!r}"
+                     for op, i1, i2, j1, j2 in sm.get_opcodes() if op != "equal"]
+            line += "\n        diff:      " + ", ".join(diffs)
+        if a.compare:
+            p = cfg.voice.pitch
+            cfg.voice.pitch = 1.0
+            fa, fsr = synth.synth(s)
+            cfg.voice.pitch = p
+            fh = transcribe(fa, fsr)
+            fe = wer(norm(spoken), norm(fh))
+            tot["flat"].append(fe)
+            line += f"\n        no-pitch:  [{fe:5.0%}] {fh!r}"
+        print(line)
+        if save:
+            with wave.open(str(save / f"{i:02d}.wav"), "wb") as w:
+                w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+                w.writeframes(audio.tobytes())
+    print(f"\nmean WER with pitch shift: {np.mean(tot['shift']):.1%}")
+    if tot["flat"]:
+        print(f"mean WER without pitch:    {np.mean(tot['flat']):.1%}")
+
+
+if __name__ == "__main__":
+    main()

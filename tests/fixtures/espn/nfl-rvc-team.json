@@ -1,0 +1,67 @@
+{
+"team": {
+"id": "9002",
+"abbreviation": "RVC",
+"shortDisplayName": "Comets",
+"name": "Comets",
+"color": "8a2be2",
+"record": {
+"items": [
+{
+"summary": "5-2"
+}
+]
+},
+"nextEvent": [
+{
+"id": "401873045",
+"date": "2026-11-08T18:00Z",
+"shortName": "NYJ @ RVC",
+"competitions": [
+{
+"id": "401873045",
+"date": "2026-11-08T18:00Z",
+"timeValid": true,
+"status": {
+"clock": 0.0,
+"displayClock": "0:00",
+"isTBDFlex": false,
+"period": 0,
+"type": {
+"completed": false,
+"description": "Scheduled",
+"detail": "Sun, November 8th at 1:00 PM EST",
+"id": "1",
+"name": "STATUS_SCHEDULED",
+"shortDetail": "11/8 - 1:00 PM EST",
+"state": "pre"
+}
+},
+"competitors": [
+{
+"id": "9002",
+"homeAway": "home",
+"winner": null,
+"score": null,
+"team": {
+"id": "9002",
+"abbreviation": "RVC"
+}
+},
+{
+"id": "20",
+"homeAway": "away",
+"winner": null,
+"score": null,
+"team": {
+"id": "20",
+"abbreviation": "NYJ"
+}
+}
+]
+}
+]
+}
+]
+}
+}

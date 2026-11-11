@@ -1,0 +1,10 @@
+[Unit]
+Description=Walter: refresh the sleep dashboard every 15 minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=15min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

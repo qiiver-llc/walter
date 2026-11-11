@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Safety check before pushing to the PUBLIC repo: block secrets and personal data.
+# Personal stuff belongs in ~/.walter (config, memory, voices), never in this repo.
+set -euo pipefail
+fail=0
+range_list=$(while read -r lref lsha rref rsha; do
+  [ "$lsha" = "0000000000000000000000000000000000000000" ] && continue
+  if [ "$rsha" = "0000000000000000000000000000000000000000" ]; then echo "$lsha"; else echo "$rsha..$lsha"; fi
+done)
+for r in $range_list; do
+  added=$(git log -p --no-color "$r" -- . | grep -E '^\+' | grep -vE '^\+\+\+' || true)
+  # real-looking secrets (not the documented prefixes like "sk-ant-oat...")
+  if echo "$added" | grep -nE '(sk-ant-[A-Za-z0-9]{2,8}-[A-Za-z0-9_-]{20,}|github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{30,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|"accessToken" *: *"[^"]{20,})'; then
+    echo "pre-push: possible secret above. Push blocked." >&2; fail=1; fi
+  # private files that must never be committed
+  # (the blank home/memory.md template the installer copies is fine: it has no notes in it)
+  private=$(git diff --name-only "${r%%..*}" "${r##*..}" 2>/dev/null | grep -E '(^|/)(memory\.md|config\.toml|\.credentials\.json|usage\.json|card\.json|brain\.json|tasks\.json|hosts\.yml)$' \
+    | while read -r f; do
+        if [ "$f" = home/memory.md ] && ! git show "${r##*..}:$f" 2>/dev/null | grep -qE '^[[:space:]]*[-*+][[:space:]]|^[[:space:]]*[0-9]+\.[[:space:]]'; then continue; fi
+        echo "$f"
+      done || true)
+  if [ -n "$private" ]; then
+    echo "$private"
+    echo "pre-push: private file above. Push blocked." >&2; fail=1; fi
+  # personal words listed (one per line) in ~/.walter/private-words.txt
+  if [ -f "$HOME/.walter/private-words.txt" ] && echo "$added" | grep -niwFf "$HOME/.walter/private-words.txt"; then
+    echo "pre-push: personal info above (from ~/.walter/private-words.txt). Push blocked." >&2; fail=1; fi
+done
+exit $fail

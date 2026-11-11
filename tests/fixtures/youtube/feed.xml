@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+ <title>Sample Builders</title>
+ <yt:channelId>UCaaaaaaaaaaaaaaaaaaaaaa</yt:channelId>
+ <entry>
+  <yt:videoId>vidAAAAAAA1</yt:videoId>
+  <title>Older build &lt;b&gt;video&lt;/b&gt;</title>
+  <published>2026-11-01T12:00:00+00:00</published>
+  <media:group><media:thumbnail url="https://i1.ytimg.com/vi/vidAAAAAAA1/hqdefault.jpg" width="480" height="360"/></media:group>
+ </entry>
+ <entry>
+  <yt:videoId>vidBBBBBBB2</yt:videoId>
+  <title>Newest shop tour</title>
+  <published>2026-11-08T12:00:00+00:00</published>
+  <media:group><media:thumbnail url="https://evil.invalid/x.jpg"/></media:group>
+ </entry>
+ <entry>
+  <yt:videoId>bad</yt:videoId>
+  <title>Broken entry</title>
+ </entry>
+</feed>

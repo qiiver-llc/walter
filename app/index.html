@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no, interactive-widget=resizes-content">
+<meta name="theme-color" content="#05060a">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Walter">
+<title>Walter</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-version="__VERSION__">
+
+<!-- pairing: shown until this device has a token -->
+<section id="pair" class="screen hidden">
+  <div class="pairbox">
+    <canvas class="pairface" id="pairFace"></canvas>
+    <h1>Pair with Walter</h1>
+    <p class="muted">Ask Walter to pair a new device (or run <code>walterctl pair</code>). He shows a
+      6-digit code on his screen.</p>
+    <form id="pairForm" autocomplete="off">
+      <label>Code on Walter's screen
+        <input id="pairCode" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" placeholder="123456" required></label>
+      <label>Your name
+        <input id="pairOwner" maxlength="40" placeholder="So Walter knows who's talking"></label>
+      <label>This device
+        <input id="pairName" maxlength="40" placeholder="Phone" required></label>
+      <button class="btn primary" type="submit">Pair</button>
+      <p id="pairMsg" class="msg"></p>
+    </form>
+  </div>
+</section>
+
+<!-- the app -->
+<section id="main" class="screen hidden" data-view="chat">
+  <header id="top">
+    <canvas id="miniFace" aria-label="Walter"></canvas>
+    <div class="who">
+      <div class="name">Walter <span id="cloud" class="cloud hidden" title="Using cloud speech">cloud</span></div>
+      <div id="stateLine" class="state">Connecting...</div>
+    </div>
+    <button id="rmPill" class="pill hidden" title="The browser is open on the wall: control it from here">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Wall browser</button>
+    <button id="stopBtn" class="chip hidden" title="Stop this answer">Stop</button>
+    <button id="histSearchBtn" class="iconbtn histsearch" title="Search the chat" aria-label="Search the chat" aria-pressed="false">
+      <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg></button>
+  </header>
+
+  <div id="update" class="banner hidden">
+    <span>Update available</span><button id="updateBtn" class="btn small">Update now</button>
+  </div>
+
+  <main id="views">
+    <!-- chat + talk (home) -->
+    <section id="v-chat" class="view active">
+      <div id="histSearch" class="histsearchbar hidden" role="search">
+        <input id="histQ" type="search" maxlength="100" placeholder="Search everything we've said" aria-label="Search the chat" enterkeyhint="search">
+        <span id="histCount" class="muted"></span>
+        <button type="button" id="histClose" class="chip" aria-label="Close search">Done</button>
+      </div>
+      <div id="histResults" class="histresults hidden" aria-label="Search results"></div>
+      <div id="histMore" class="histmore hidden">Loading older messages...</div>
+      <div id="log" aria-live="polite"></div>
+      <div id="typing" class="typing hidden"><span></span><span></span><span></span></div>
+      <div id="caption" class="caption hidden"></div>
+      <div id="recBar" class="recbar hidden"><span class="dot"></span><span id="recText">Listening...</span>
+        <button id="recCancel" class="chip">Cancel</button></div>
+      <div id="attachTray" class="tray hidden" aria-label="Photos to send"></div>
+      <form id="chatForm" class="composer empty" autocomplete="off">
+        <button type="button" id="wallBtn" class="iconbtn" title="Also say it on the wall speaker" aria-label="Also say it on the wall speaker" aria-pressed="false">
+          <svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path class="wave" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12"/></svg>
+        </button>
+        <button type="button" id="attachBtn" class="iconbtn attach off" title="Needs one restart to enable" aria-label="Attach a photo">
+          <svg viewBox="0 0 24 24"><path d="M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9"/></svg>
+        </button>
+        <input type="file" id="attachInput" accept="image/*" multiple hidden>
+        <textarea id="chatInput" rows="1" maxlength="4000" placeholder="Message Walter"></textarea>
+        <button type="submit" id="sendBtn" class="iconbtn send" title="Send" aria-label="Send">
+          <svg viewBox="0 0 24 24"><path d="M3 20l18-8L3 4v6l12 2-12 2z"/></svg>
+        </button>
+        <button type="button" id="micBtn" class="iconbtn mic" title="Hold to talk, or tap to start and tap again to send" aria-label="Talk to Walter">
+          <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        </button>
+      </form>
+      <div id="lightbox" class="lightbox hidden" role="dialog" aria-label="Photo"><img id="lightImg" alt="Photo you sent"></div>
+    </section>
+
+    <!-- today / tomorrow + while you were away -->
+    <section id="v-today" class="view">
+      <div class="vhead"><h1>Today</h1><span id="todayDate" class="muted"></span></div>
+      <div id="awayBox" class="hidden">
+        <h2>While you were away <button id="awayClear" class="chip">Clear</button></h2>
+        <div id="awayList" class="cards"></div>
+      </div>
+      <h2>Calendar today</h2><div id="evToday" class="events"></div>
+      <h2>Tomorrow</h2><div id="evTomorrow" class="events"></div>
+      <p id="evAge" class="muted small"></p>
+    </section>
+
+    <!-- the person's list -->
+    <section id="v-list" class="view">
+      <div class="vhead"><h1 id="listTitle">My list</h1></div>
+      <form id="listForm" class="addform" autocomplete="off">
+        <div class="row">
+          <input id="listText" maxlength="160" placeholder="Add something..." enterkeyhint="done">
+          <button class="btn primary">Add</button>
+        </div>
+        <input type="hidden" id="listSection" value="tasks">
+        <div class="seg" role="radiogroup" aria-label="Where it goes">
+          <button type="button" class="chip on" data-sec="tasks" role="radio" aria-checked="true">Task</button>
+          <button type="button" class="chip" data-sec="shopping" role="radio" aria-checked="false">Shopping</button>
+          <button type="button" class="chip" data-sec="notes" role="radio" aria-checked="false">Note</button>
+          <button type="button" class="chip" data-sec="ideas" role="radio" aria-checked="false">Idea</button>
+          <button type="button" class="chip" data-sec="inbox" role="radio" aria-checked="false">Inbox</button>
+        </div>
+      </form>
+      <div id="listBody"></div>
+    </section>
+
+    <!-- Walter: the wall, his work, links to Remote and Settings -->
+    <section id="v-walter" class="view">
+      <div class="vhead"><h1>Walter</h1></div>
+      <div class="tiles">
+        <button class="tile" id="micTile" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+          <span class="tl">Wall mic</span><span class="ts" id="micTileState">On</span></button>
+        <button class="tile" id="sleepTile" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+          <span class="tl">Sleep</span><span class="ts" id="sleepTileState">Awake</span></button>
+        <button class="tile" data-ctl="stop">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+          <span class="tl">Stop talking</span><span class="ts">On the wall</span></button>
+      </div>
+      <div class="volrow">
+        <span>Volume</span>
+        <button class="btn round" data-vol="down" aria-label="Volume down">&minus;</button>
+        <span id="volLine" class="muted">?</span>
+        <button class="btn round" data-vol="up" aria-label="Volume up">+</button>
+      </div>
+
+      <div class="navlist">
+        <button class="navrow" id="plRow">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l6-3.5z"/></svg>
+          <span class="nt">Player<span id="plRowSub" class="ns">Nothing playing</span></span><span class="chev">&#8250;</span></button>
+        <button class="navrow" data-go="remote">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          <span class="nt">Wall browser remote<span id="rmRowSub" class="ns">Browse on the wall from here</span></span><span class="chev">&#8250;</span></button>
+        <button class="navrow" data-go="settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+          <span class="nt">Settings<span class="ns">Notifications, speech, this phone</span></span><span class="chev">&#8250;</span></button>
+      </div>
+
+      <details class="showbox">
+        <summary>Show something on the wall</summary>
+        <form id="showForm" class="stack" autocomplete="off">
+          <input id="showTitle" maxlength="80" placeholder="Title (optional)">
+          <textarea id="showBody" rows="2" maxlength="1500" placeholder="Show something on Walter's screen"></textarea>
+          <button class="btn primary">Show on wall</button>
+        </form>
+      </details>
+
+      <h2>Workers</h2><div id="wkLiveW" class="cards"></div><div id="tasks" class="cards"></div>
+      <h2>Reminders</h2><div id="reminders" class="cards"></div>
+      <h2>Walter's to-do</h2><div id="backlog" class="cards"></div>
+    </section>
+
+    <!-- sub-screen of Walter: remote for the wall browser (remote.js) -->
+    <section id="v-remote" class="view sub">
+      <div class="vhead"><button class="back" data-back aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><h1>Remote</h1></div>
+      <div class="rm-top">
+        <div class="rm-where"><div id="rmTitle" class="rm-title">Wall browser</div><div id="rmUrl" class="muted small"></div></div>
+        <button id="rmOpen" class="btn small">Open on wall</button>
+        <button id="rmClose" class="btn small hidden">Close</button>
+      </div>
+      <form id="rmGo" class="row rm-url" autocomplete="off">
+        <input id="rmAddr" type="text" inputmode="url" enterkeyhint="go" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="2000" placeholder="Address or search">
+        <button class="btn primary">Go</button>
+      </form>
+      <div class="rm-nav">
+        <button class="btn small" data-nav="back" title="Back">&#8592; Back</button>
+        <button class="btn small" data-nav="forward" title="Forward">Forward &#8594;</button>
+        <button class="btn small" data-nav="reload" title="Reload">Reload</button>
+        <span class="rm-mode" role="group" aria-label="Touch mode">
+          <button class="chip on" data-mode="touch" aria-pressed="true">Tap</button><button class="chip" data-mode="pad" aria-pressed="false">Trackpad</button>
+        </span>
+      </div>
+      <div id="rmScreen" class="rm-screen off">
+        <img id="rmImg" alt="" draggable="false">
+        <div id="rmCursor" class="rm-cursor hidden"></div>
+        <div id="rmEmpty" class="rm-empty">The browser isn't open on the wall.<br>Type an address above, or tap Open on wall.</div>
+      </div>
+      <p id="rmHint" class="muted small rm-hint">Tap to click, drag to scroll.</p>
+      <p id="rmField" class="small rm-field"></p>
+      <form id="rmTypeForm" class="row" autocomplete="off">
+        <input id="rmText" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="500" enterkeyhint="send" placeholder="Type into the page">
+        <button class="btn primary">Type</button>
+      </form>
+      <form id="rmPassForm" class="row" autocomplete="off">
+        <input id="rmPass" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="500" enterkeyhint="send" placeholder="Password (hidden)">
+        <button class="btn">Type password</button>
+      </form>
+      <label class="toggle small rm-enter"><input type="checkbox" id="rmEnter"> Press Enter after typing</label>
+      <div class="rm-keys">
+        <button class="btn small" data-key="Enter">Enter</button>
+        <button class="btn small" data-key="Tab">Tab</button>
+        <button class="btn small" data-key="Shift+Tab">Shift+Tab</button>
+        <button class="btn small" data-key="Backspace">&#9003; Bksp</button>
+        <button class="btn small" data-key="Escape">Esc</button>
+        <button class="btn small" data-key="ArrowLeft" title="Left">&#8592;</button>
+        <button class="btn small" data-key="ArrowUp" title="Up">&#8593;</button>
+        <button class="btn small" data-key="ArrowDown" title="Down">&#8595;</button>
+        <button class="btn small" data-key="ArrowRight" title="Right">&#8594;</button>
+      </div>
+      <p class="muted small rm-note"><b>You're in control:</b> while you use this, Walter's own browser commands wait.
+        He carries on about 10 seconds after you stop. What you type goes straight into the page and is never saved,
+        shown or read out; passwords only go into a password box.</p>
+    </section>
+
+    <!-- sub-screen of Walter: settings for this device -->
+    <section id="v-settings" class="view sub">
+      <div class="vhead"><button class="back" data-back aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><h1>Settings</h1></div>
+      <h2>Speech</h2>
+      <div class="stack">
+        <label class="toggle"><input type="checkbox" id="setSpeakTyped"> Speak replies to typed messages</label>
+        <label class="toggle"><input type="checkbox" id="setSpeakTalk" checked> Speak replies when I talk</label>
+      </div>
+      <h2>Notifications</h2>
+      <div class="stack">
+        <div class="row"><button id="pushBtn" class="btn">Turn on notifications</button>
+          <button id="pushTest" class="chip hidden">Send a test</button></div>
+        <p class="muted small" id="pushLine">Reminders and things you missed, even with the app closed.</p>
+      </div>
+      <h2>Setup</h2>
+      <div class="stack">
+        <a class="btn" href="/firstrun?app=1">Revisit setup steps</a>
+        <p class="muted small">Name, place, mic and speaker, privacy choices, extras, Cloud Link.</p>
+      </div>
+      <h2>Projects</h2>
+      <div class="stack">
+        <div id="pjSetList" class="pj-list"><p class="muted small">Loading...</p></div>
+        <div class="row"><button id="pjSetAdd" class="chip" type="button">+ Add project</button></div>
+        <p class="muted small">Tap a project to put the wall on it. Edit sets its name, goals, share and walls.</p>
+      </div>
+      <h2>Schedule</h2>
+      <div class="stack">
+        <div id="scSetList" class="sc-list"><p class="muted small">Loading...</p></div>
+        <p class="muted small">Everything that runs on a timer. Tap one to change it; the switch pauses a routine.</p>
+      </div>
+      <h2>Presentation</h2>
+      <div class="stack" id="prBox">
+        <button id="prStart" class="btn primary prBig" disabled>Start presentation</button>
+        <div class="row"><button id="prStop" class="btn danger" disabled>Stop</button>
+          <button id="prRehearse" class="chip" disabled>Rehearse</button></div>
+        <p class="muted small" id="prLine" aria-live="polite">A one-minute show of what Walter can do, with pretend data on the wall. His mic is off while it runs.</p>
+      </div>
+      <h2>Wall</h2>
+      <div class="stack">
+        <label for="tsRange" class="tsHead">Wall text size <b id="tsVal">80%</b></label>
+        <input type="range" id="tsRange" min="50" max="150" step="5" value="80" disabled
+          aria-describedby="tsLine">
+        <div class="row"><button id="tsReset" class="chip" disabled>Reset to 80%</button></div>
+        <p class="muted small" id="tsLine">Size of all the text on the wall; his eyes and buttons stay the same.</p>
+      </div>
+      <h2>Workers</h2>
+      <div class="stack">
+        <div class="row wkRow"><span id="wkLabel">Workers at once</span>
+          <button id="wkDown" class="chip" aria-label="Fewer workers" disabled>&minus;</button>
+          <b id="wkVal" aria-live="polite">&ndash;</b>
+          <button id="wkUp" class="chip" aria-label="More workers" disabled>+</button></div>
+        <p class="muted small" id="wkNow"></p>
+        <div id="wkLive" class="cards"></div>
+        <p class="muted small" id="wkLine">How many background jobs Walter runs side by side.</p>
+      </div>
+      <h2>Feedback</h2>
+      <div class="stack" id="fbBox">
+        <p class="muted small">Tell the Walter team what broke, what you'd love, or what made you smile. It's saved here first; nothing leaves this house unless you tap Send.</p>
+        <select id="fbType" aria-label="Kind of feedback">
+          <option value="bug">Bug: something went wrong</option>
+          <option value="idea">Idea: something I'd like</option>
+          <option value="praise">Praise: something I liked</option>
+        </select>
+        <textarea id="fbText" rows="4" maxlength="2000" placeholder="What happened? What did you expect?"></textarea>
+        <p class="muted small"><span id="fbCount">0</span> / 2000</p>
+        <label class="toggle"><input type="checkbox" id="fbDiag"> Include diagnostics (technical details only)</label>
+        <div class="row"><button id="fbPreview" class="chip" type="button">See exactly what's included</button></div>
+        <div id="fbDiagView" class="hidden"><ul id="fbDiagSum" class="small"></ul>
+          <details><summary class="small">Everything, as it would be sent</summary><pre id="fbDiagRaw" class="fbRaw"></pre></details></div>
+        <div class="row"><button id="fbPhoto" class="chip" type="button">Attach a photo</button>
+          <span id="fbPhotoName" class="muted small"></span>
+          <input type="file" id="fbPhotoInput" accept="image/*" class="hidden"></div>
+        <button id="fbSubmit" class="btn">Save feedback</button>
+        <h3 class="small">Your feedback</h3>
+        <div id="fbList" class="cards"><p class="muted small">Nothing yet.</p></div>
+      </div>
+      <h2>This device</h2>
+      <div class="stack">
+        <p class="muted small" id="devLine"></p>
+        <p class="muted small">App version <span id="verLine">__VERSION__</span>
+          <button id="checkUpd" class="chip">Check for updates</button></p>
+        <button id="unpairBtn" class="btn danger">Unpair this device</button>
+      </div>
+      <h2>Advanced</h2>
+      <div class="stack">
+        <button id="restartBtn" class="btn warn" disabled>Restart Walter</button>
+        <p class="muted small" id="restartLine">Checks his code first; he's offline for about 10 seconds.</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- hold-to-talk from any tab (the reply shows in Chat) -->
+  <button id="talkFab" class="fab mic" title="Hold to talk, or tap to start and tap again to send" aria-label="Talk to Walter">
+    <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+  </button>
+
+  <!-- wall mode switcher (modes.js): on every tab, opens the mode sheet -->
+  <div class="fabrow">
+  <!-- screen Rotate button (modes.js, bottom half): Portrait / Landscape / Flip -->
+  <button id="rotFab" class="modefab rotfab" aria-label="Rotate the wall screen" aria-haspopup="dialog" title="Rotate screen">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+  </button>
+  <button id="modeFab" class="modefab" aria-label="Wall mode" aria-haspopup="dialog">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+    <span id="modeFabLb" class="modefab-lb">Mode</span>
+  </button>
+  </div>
+
+  <!-- mini player (player.js): shows while a podcast or YouTube plays; tap opens the player sheet -->
+  <div id="miniPlayer" class="mini hidden">
+    <button id="mpOpen" class="mp-open" aria-label="Open the player">
+      <img id="mpArt" alt="" class="none"><span class="mp-txt"><span id="mpTitle" class="mp-t"></span><span id="mpShow" class="mp-s"></span></span></button>
+    <button id="mpPlay" class="mp-play" aria-label="Pause"></button>
+    <div class="mp-prog"><div id="mpBar"></div></div>
+  </div>
+
+  <nav id="tabs" aria-label="Sections">
+    <button data-view="chat" class="active" aria-current="page">
+      <span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z"/></svg></span><span class="lb">Chat</span></button>
+    <button data-view="today">
+      <span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span id="awayBadge" class="tabbadge hidden"></span></span><span class="lb">Today</span></button>
+    <button data-view="list">
+      <span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1.2 1.2L7 5M3.5 12l1.2 1.2L7 11M3.5 18l1.2 1.2L7 17"/></svg></span><span class="lb">List</span></button>
+    <button data-view="walter">
+      <span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5c4.9 0 8.5 3.6 8.5 8.6 0 4.6-3.4 8.4-8.5 8.4s-8.5-3.8-8.5-8.4c0-5 3.6-8.6 8.5-8.6z"/><ellipse class="eye" cx="9" cy="11" rx="1.4" ry="2"/><ellipse class="eye" cx="15" cy="11" rx="1.4" ry="2"/></svg></span><span class="lb">Walter</span></button>
+  </nav>
+</section>
+
+<!-- the player sheet (player.js) -->
+<div id="playerSheet" class="sheet-wrap hidden" role="dialog" aria-modal="true" aria-label="Player">
+  <div class="sheet psheet">
+    <div class="ps-head"><span class="sheet-title">Player</span><button id="psClose" class="chip" aria-label="Close">Close</button></div>
+    <p id="psNeeds" class="muted hidden">Needs one restart to enable. Restart Walter once (Settings, Advanced, or ask him) and the player works here.</p>
+    <div id="psNow" class="hidden">
+      <img id="psArt" class="ps-art none" alt="">
+      <div id="psShow" class="muted small ps-c"></div>
+      <div id="psTitle" class="ps-title ps-c"></div>
+      <div id="psDuck" class="muted small ps-c"></div>
+      <input id="psSeek" type="range" min="0" max="1" value="0" step="1" aria-label="Position">
+      <div class="ps-times muted small"><span id="psPos">0:00</span><span id="psLeft"></span></div>
+      <div class="ps-ctl">
+        <button id="psBack" class="btn round big" aria-label="Back 15 seconds">-15</button>
+        <button id="psPlay" class="btn primary round huge" aria-label="Pause"></button>
+        <button id="psFwd" class="btn round big" aria-label="Forward 30 seconds">+30</button>
+        <button id="psNext" class="btn round big hidden" aria-label="Next video">&#9197;</button>
+      </div>
+      <div id="psSpeeds" class="ps-speeds"></div>
+      <div class="ps-vol"><span>Volume</span><input id="psVol" type="range" min="0" max="100" step="1" value="60" aria-label="Volume"><span id="psVolVal">60</span></div>
+      <button id="psStop" class="btn danger ps-stop">Stop</button>
+    </div>
+    <div id="psIdle" class="hidden">
+      <p class="muted">Nothing playing on the wall.</p>
+      <div id="psResume" class="ps-resume hidden"><div id="psResumeLine" class="small"></div><button id="psResumeBtn" class="btn primary">Play</button></div>
+    </div>
+    <h2 id="psUpHead" class="hidden">Up next</h2>
+    <div id="psUpnext"></div>
+  </div>
+</div>
+
+<!-- the wall mode sheet (modes.js) -->
+<div id="modeSheet" class="sheet-wrap hidden" role="dialog" aria-modal="true" aria-label="Wall mode">
+  <div class="sheet msheet">
+    <div class="ps-head"><span class="sheet-title">Wall mode</span><button id="msClose" class="chip" aria-label="Close">Close</button></div>
+    <p id="msNeeds" class="muted hidden">Needs one restart to enable. Restart Walter once (Settings, Advanced, or ask him) and the mode switcher works here.</p>
+    <div id="msBody" class="hidden">
+      <p id="msNow" class="muted small ms-now"></p>
+      <div id="msGrid" class="ms-grid"></div>
+      <div id="msAsk" class="ms-ask hidden">
+        <p id="msAskLine"></p>
+        <div id="msAskBtns" class="ms-row">
+          <button class="btn primary" data-end="park">Park it</button>
+          <button class="btn" data-end="done">Mark done</button>
+          <button class="btn">Cancel</button>
+        </div>
+      </div>
+      <div id="msFocus" class="ms-focus hidden">
+        <form id="msFocusForm" autocomplete="off">
+          <label class="ms-lbl" for="msTask">What's the box for?</label>
+          <input id="msTask" maxlength="80" placeholder="e.g. network app" enterkeyhint="go">
+          <label class="ms-lbl" for="msMins">Minutes</label>
+          <div class="ms-row"><div id="msMinBtns" class="ms-row ms-mins"></div>
+            <input id="msMins" type="number" inputmode="numeric" min="1" max="240" step="1" value="25" aria-label="Minutes"></div>
+          <button type="submit" class="btn primary ms-start">Start focus box</button>
+        </form>
+      </div>
+      <div id="msBuild" class="hidden">
+        <h2>Phase</h2>
+        <div id="msPhase" class="ms-row"><button class="btn" data-phase="plan">Plan</button><button class="btn" data-phase="build">Build</button></div>
+        <h2>Zoom</h2>
+        <div id="msZoom" class="ms-zoom"></div>
+      </div>
+      <p id="msMsg" class="ms-msg" role="status"></p>
+    </div>
+    <div class="ms-rotrow">
+      <button id="msRotate" class="btn ms-rot"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>Rotate screen<span id="msRotNow" class="muted small"></span></button>
+      <button id="msProjects" class="btn ms-rot"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h7l2 2h9v10H3z"/></svg>Projects<span id="msPjNow" class="muted small"></span></button>
+      <button id="msSchedule" class="btn ms-rot"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Schedule<span id="msScNow" class="muted small"></span></button>
+    </div>
+  </div>
+</div>
+
+<!-- the screen Rotate sheet (modes.js): Portrait / Landscape / Flip -->
+<div id="rotSheet" class="sheet-wrap hidden" role="dialog" aria-modal="true" aria-label="Rotate the screen">
+  <div class="sheet msheet">
+    <div class="ps-head"><span class="sheet-title">Rotate screen</span><button id="rsClose" class="chip" aria-label="Close">Close</button></div>
+    <p id="rsNeeds" class="muted hidden">Needs one restart to enable. Restart Walter once (Settings, Advanced, or ask him) and the Rotate button works here.</p>
+    <p id="rsNow" class="muted small ms-now"></p>
+    <div id="rsGrid" class="ms-grid rs-grid">
+      <button class="ms-btn" data-o="portrait"><span class="ms-l">Portrait</span><span class="ms-h">Tall, on the wall</span></button>
+      <button class="ms-btn" data-o="landscape"><span class="ms-l">Landscape</span><span class="ms-h">Wide, like a TV</span></button>
+      <button class="ms-btn" data-o="portrait-flipped"><span class="ms-l">Portrait, upside down</span><span class="ms-h">Tall, turned the other way</span></button>
+      <button class="ms-btn" data-o="landscape-flipped"><span class="ms-l">Landscape, upside down</span><span class="ms-h">Wide, turned over</span></button>
+      <button class="ms-btn rs-flip" data-o="flip"><span class="ms-l">Flip</span><span class="ms-h">Switch to the other one</span></button>
+    </div>
+    <p id="rsMsg" class="ms-msg" role="status"></p>
+  </div>
+</div>
+
+<!-- the Projects sheet (modes.js, Projects part): switch the wall's project, add one, edit one. No delete. -->
+<div id="pjSheet" class="sheet-wrap hidden" role="dialog" aria-modal="true" aria-label="Projects">
+  <div class="sheet msheet">
+    <div class="ps-head"><span class="sheet-title">Projects</span><button id="pjClose" class="chip" aria-label="Close">Close</button></div>
+    <p id="pjNeeds" class="muted hidden">Needs one restart to enable. Restart Walter once (Settings, Advanced, or ask him) and Projects works here.</p>
+    <div id="pjMain">
+      <p class="muted small ms-now" id="pjNow"></p>
+      <div id="pjList" class="pj-list"></div>
+      <button id="pjAddBtn" class="btn pj-add" type="button">+ Add project</button>
+    </div>
+    <form id="pjAdd" class="ms-focus hidden" autocomplete="off">
+      <label class="ms-lbl" for="pjAddName">Project name</label>
+      <input id="pjAddName" maxlength="40" placeholder="e.g. Acme" enterkeyhint="done">
+      <label class="toggle"><input type="checkbox" id="pjAddWalled"> Walled off</label>
+      <p class="muted small pj-why">Walled = kept apart: its notes, files and workers never mix with your other projects.</p>
+      <div class="ms-row"><button type="submit" class="btn primary">Add project</button><button type="button" class="btn" data-cancel>Cancel</button></div>
+    </form>
+    <form id="pjEdit" class="ms-focus hidden" autocomplete="off">
+      <div class="sheet-title" id="pjEditTitle">Edit</div>
+      <label class="ms-lbl" for="pjEditName">Name</label>
+      <input id="pjEditName" maxlength="40">
+      <div id="pjGoalsBox">
+        <label class="ms-lbl" for="pjEditGoals">Goals (one per line)</label>
+        <textarea id="pjEditGoals" rows="3" maxlength="1000"></textarea>
+      </div>
+      <p id="pjGoalsHidden" class="muted small hidden">Goals stay hidden for a walled project (ask Walter at the wall).</p>
+      <label class="ms-lbl" for="pjEditShare">Share of Walter's time <b id="pjShareVal">0%</b></label>
+      <input type="range" id="pjEditShare" min="0" max="100" step="5" value="0">
+      <label class="toggle"><input type="checkbox" id="pjEditWalled"> Walled off</label>
+      <p class="muted small pj-why">Walled = kept apart: its notes, files and workers never mix with your other projects.</p>
+      <div id="pjUnlock" class="ms-ask hidden">
+        <p id="pjUnlockLine"></p>
+        <div class="ms-row"><button type="button" class="btn danger" id="pjUnlockYes">Open it up</button><button type="button" class="btn" id="pjUnlockNo">Keep it walled</button></div>
+      </div>
+      <div class="ms-row"><button type="submit" class="btn primary">Save</button><button type="button" class="btn" data-cancel>Cancel</button></div>
+    </form>
+    <p id="pjMsg" class="ms-msg" role="status"></p>
+  </div>
+</div>
+
+<!-- the Schedule sheet (schedule.js): reminders, do-later jobs, routines, loops; system timers read-only -->
+<div id="scSheet" class="sheet-wrap hidden" role="dialog" aria-modal="true" aria-label="Schedule">
+  <div class="sheet msheet">
+    <div class="ps-head"><span class="sheet-title">Schedule</span><button id="scClose" class="chip" aria-label="Close">Close</button></div>
+    <p id="scNeeds" class="muted hidden">Needs one restart to enable. Restart Walter once (Settings, Advanced, or ask him) and the Schedule works here.</p>
+    <div id="scMain"><div id="scList" class="sc-list"></div></div>
+    <form id="scEdit" class="ms-focus hidden" autocomplete="off">
+      <div class="sheet-title" id="scEditTitle">Edit</div>
+      <p class="muted small" id="scHint"></p>
+      <label class="ms-lbl" for="scTime">Time</label>
+      <input type="time" id="scTime" required>
+      <div id="scDateBox">
+        <label class="ms-lbl" for="scDate">Day</label>
+        <input type="date" id="scDate">
+      </div>
+      <div id="scRoutineBox">
+        <span class="ms-lbl">Days</span>
+        <div id="scDays" class="sc-days">
+          <button type="button" class="sc-day" data-d="0">Mon</button><button type="button" class="sc-day" data-d="1">Tue</button><button type="button" class="sc-day" data-d="2">Wed</button><button type="button" class="sc-day" data-d="3">Thu</button><button type="button" class="sc-day" data-d="4">Fri</button><button type="button" class="sc-day" data-d="5">Sat</button><button type="button" class="sc-day" data-d="6">Sun</button>
+        </div>
+        <div class="sc-quick"><button type="button" class="chip" data-days="daily">Every day</button><button type="button" class="chip" data-days="weekdays">Weekdays</button><button type="button" class="chip" data-days="weekends">Weekends</button></div>
+      </div>
+      <label class="ms-lbl" for="scText">What it says or does <span id="scCount" class="muted small"></span></label>
+      <textarea id="scText" rows="6" maxlength="2000"></textarea>
+      <div id="scAsk" class="ms-ask hidden">
+        <p id="scAskLine"></p>
+        <div class="ms-row"><button type="button" class="btn danger" id="scAskYes">Delete</button><button type="button" class="btn" id="scAskNo">Keep it</button></div>
+      </div>
+      <div class="ms-row"><button type="submit" class="btn primary">Save</button><button type="button" class="btn" data-cancel>Cancel</button></div>
+      <button type="button" class="btn danger sc-del" id="scDelete">Delete</button>
+    </form>
+    <div id="scHb" class="ms-focus hidden">
+      <div class="sheet-title">Heartbeat instructions</div>
+      <p class="muted small">What Walter reads each time he checks in on his own.</p>
+      <label class="ms-lbl" for="scHbPrompt">Wake-up line <span id="scHbPCount" class="muted small"></span></label>
+      <p class="muted small">The one line that starts every beat. {time} and {home} are filled in; empty means the built-in line. If it doesn't mention [silent], the "stay quiet when there's nothing to do" rule is added for you.</p>
+      <textarea id="scHbPrompt" rows="4" maxlength="1500" spellcheck="false"></textarea>
+      <div class="ms-row"><button type="button" class="btn primary" id="scHbPSave">Save line</button><button type="button" class="btn" id="scHbPReset">Reset to default</button></div>
+      <label class="ms-lbl" for="scHbText">Checklist (initiative.md) <span id="scHbCount" class="muted small"></span></label>
+      <p class="muted small">The list he works through on every beat: what to check, what to work on, when to stay quiet.</p>
+      <p id="scHbDraft" class="muted small hidden"></p>
+      <textarea id="scHbText" class="sc-mono" rows="18" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off"></textarea>
+      <div id="scHbAsk" class="ms-ask hidden">
+        <p>Save an empty checklist? Walter would have nothing to follow on his heartbeats.</p>
+        <div class="ms-row"><button type="button" class="btn danger" id="scHbAskYes">Save it empty</button><button type="button" class="btn" id="scHbAskNo">Cancel</button></div>
+      </div>
+      <div class="ms-row"><button type="button" class="btn primary" id="scHbSave">Save checklist</button><button type="button" class="btn" id="scHbRevert">Revert</button></div>
+      <details id="scHbOld" class="sc-old"><summary>Restore a previous version</summary><div id="scHbBackups"></div></details>
+      <div class="ms-row"><button type="button" class="btn" id="scHbBack">Back</button></div>
+    </div>
+    <p id="scMsg" class="ms-msg" role="status"></p>
+  </div>
+</div>
+
+<!-- bottom sheet for confirmations (restart) -->
+<div id="sheet" class="sheet-wrap hidden" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+  <div class="sheet">
+    <div class="sheet-title" id="sheetTitle"></div>
+    <div class="sheet-body" id="sheetBody"></div>
+    <div class="sheet-btns" id="sheetBtns"></div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<script src="face-mini.js"></script>
+<script src="app.js"></script>
+<script src="remote.js"></script>
+<script src="player.js"></script>
+<script src="modes.js"></script>
+<script src="schedule.js"></script>
+</body>
+</html>

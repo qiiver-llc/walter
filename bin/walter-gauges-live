@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Live CPU/memory/load for the build cockpit: face/dashboard-gauges.json every 3 s
+# (walter-gauges-live.service). One-off: python3 -m walter.gaugelive --once
+here="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+cd "$here" && exec nice -n 10 python3 -m walter.gaugelive "$@"

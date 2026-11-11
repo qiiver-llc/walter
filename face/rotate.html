@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Walter</title>
+<!--
+  Software screen rotation (no wlr-randr / sudo needed). The face itself runs inside
+  the iframe below, which is (screen height) wide and (screen width) tall and turned
+  90 or 270 degrees, so inside it the face sees a real portrait viewport: the portrait
+  layout (portrait.js), vh/vw units, innerWidth/innerHeight, media queries and pointer
+  coordinates all just work (the browser maps clicks/touches through the transform).
+
+  Setting: face/display.json {"rotate": 0|90|270}, written by
+  `walterctl display css-rotate 90|270|0` (fixed old mtime, so it never triggers a face
+  reload). Polled every 2 s here and on the plain face (portrait.js): changes apply live.
+  90 = content turned clockwise, 270 = counter-clockwise, 0 = back to the normal face.
+-->
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+    background: #05060a; cursor: none; }
+  #face { position: fixed; left: 0; top: 0; border: 0; display: block;
+    width: 100vh; height: 100vw; transform-origin: 0 0; }
+  /* 90: (x, y) -> (-y, x), then shift right by the screen width */
+  html.r90 #face { transform: translateX(100vw) rotate(90deg); }
+  /* 270: (x, y) -> (y, -x), then shift down by the screen height */
+  html.r270 #face { transform: translateY(100vh) rotate(-90deg); }
+</style>
+</head>
+<body>
+<iframe id="face" allow="autoplay; camera; microphone; fullscreen; clipboard-read; clipboard-write"></iframe>
+<script>
+(() => {
+  "use strict";
+  const frame = document.getElementById("face");
+  const qs = new URLSearchParams(location.search);
+  let rot = String(qs.get("r") || "90");
+  const apply = (r) => {
+    rot = r;
+    document.documentElement.classList.toggle("r90", r === "90");
+    document.documentElement.classList.toggle("r270", r === "270");
+  };
+  apply(rot === "270" ? "270" : "90");
+  // the face, with any of our own query options (e.g. ?lite) passed through
+  qs.delete("r"); qs.set("embedded", "1");
+  const base = /^\/face(\/|$)/.test(location.pathname) ? "/face/" : "/";   // a remote face (walter/face_server.py)
+  frame.src = base + "?" + qs.toString();
+
+  // Keep the keyboard inside the face (Space = mute, Enter = type, Esc, Z...).
+  const focusFace = () => { try { frame.contentWindow.focus(); } catch (e) {} };
+  frame.addEventListener("load", focusFace);
+  window.addEventListener("focus", focusFace);
+  window.addEventListener("keydown", (e) => { // focus slipped out to us: hand this key in too
+    focusFace();
+    try {
+      const w = frame.contentWindow;
+      (w.document.activeElement || w.document.body || w).dispatchEvent(new w.KeyboardEvent("keydown", {
+        key: e.key, code: e.code, repeat: e.repeat, bubbles: true, cancelable: true,
+        ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey }));
+      e.preventDefault();
+    } catch (err) {}
+  });
+
+  async function poll() {
+    try {
+      const fid = (/[?&]face=([a-z0-9][a-z0-9-]{0,31})(?:&|#|$)/.exec(location.search) || [])[1];
+      const own = fid && fid !== "wall" ? `display-${fid}.json` : "display.json";
+      const res = await fetch(own, { cache: "no-store" });
+      const d = res.status === 404 ? {} : await res.json(); // file gone = rotation off
+      const r = String(parseInt(d.rotate, 10) || 0);
+      if (r === "90" || r === "270") { if (r !== rot) apply(r); }
+      else { const q = new URLSearchParams(location.search); q.delete("r");
+             const s = q.toString(); location.replace(base + (s ? "?" + s : "")); }
+    } catch (e) {} // no file / server restarting: keep what we have
+  }
+  setInterval(poll, 2000);
+})();
+</script>
+</body>
+</html>

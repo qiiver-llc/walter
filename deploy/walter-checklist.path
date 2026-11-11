@@ -1,0 +1,8 @@
+[Unit]
+Description=Watch Walter's backlog for changes
+
+[Path]
+PathChanged=%h/.walter/home/backlog.md
+
+[Install]
+WantedBy=default.target

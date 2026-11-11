@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+<channel>
+<title>Sample Comedy Hour</title>
+<item><title>Episode 41: Old One</title><guid>ep-41</guid>
+<pubDate>Mon, 26 Oct 2026 08:00:00 +0000</pubDate><itunes:duration>1:02:03</itunes:duration>
+<enclosure url="https://example.invalid/41.mp3" type="audio/mpeg" length="1"/></item>
+<item><title>Episode 43: Newest Thing</title><guid>ep-43</guid>
+<pubDate>Wed, 04 Nov 2026 08:00:00 +0000</pubDate><itunes:duration>3600</itunes:duration>
+<enclosure url="https://example.invalid/43.mp3" type="audio/mpeg" length="1"/></item>
+<item><title>Episode 42: Gravy Trains</title><guid>ep-42</guid>
+<pubDate>Sat, 31 Oct 2026 08:00:00 +0000</pubDate><itunes:duration>45:00</itunes:duration>
+<enclosure url="https://example.invalid/42.mp3" type="audio/mpeg" length="1"/></item>
+<item><title>Trailer with no audio</title><guid>none</guid></item>
+</channel></rss>

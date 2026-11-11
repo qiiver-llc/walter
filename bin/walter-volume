@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# walter-volume: speaker volume for Walter (PipeWire default output).
+#   walter-volume            show current volume
+#   walter-volume up|down    +/- 10%
+#   walter-volume set 60     set to 60%
+#   walter-volume mute|unmute
+# Shows the new level on Walter's face for a few seconds.
+set -euo pipefail
+SINK=@DEFAULT_AUDIO_SINK@
+here="$(dirname "$(readlink -f "$0")")"
+case "${1:-get}" in
+  up)     wpctl set-volume -l 1.0 $SINK 10%+ 2>/dev/null ;;
+  down)   wpctl set-volume $SINK 10%- 2>/dev/null ;;
+  set)    v="${2:?percent}"; v="${v%\%}"; [ "$v" -gt 100 ] && v=100; wpctl set-volume $SINK "$(awk "BEGIN{print $v/100}")" 2>/dev/null ;;
+  mute)   wpctl set-mute $SINK 1 2>/dev/null ;;
+  unmute) wpctl set-mute $SINK 0 2>/dev/null ;;
+  get)    ;;
+  *)      sed -n '2,8p' "$0"; exit 1 ;;
+esac
+line="$(wpctl get-volume $SINK 2>/dev/null | grep Volume)"
+pct="$(echo "$line" | awk '{printf "%d", $2*100+0.5}')"
+muted=""; echo "$line" | grep -q MUTED && muted=" (muted)"
+echo "volume ${pct}%${muted}"
+if [ "${1:-get}" != get ]; then
+  bar=""; n=$((pct/10)); for i in $(seq 1 10); do [ $i -le $n ] && bar="${bar}█" || bar="${bar}░"; done
+  "$here/walter-show" "Volume" "${bar}  ${pct}%${muted}" 3 >/dev/null 2>&1 || true
+fi

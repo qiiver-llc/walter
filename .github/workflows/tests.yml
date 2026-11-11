@@ -1,0 +1,33 @@
+name: Tests
+
+# Runs the unit tests for pull requests (including from forks) and pushes.
+# Public-repo safety: plain pull_request trigger (never pull_request_target), a
+# read-only token, no secrets, no artifacts published, credentials not kept in .git.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - run: pip install aiohttp numpy qrcode pytest cryptography pywebpush
+      - run: python -m py_compile walter/*.py
+      - run: python -m pytest -q tests
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - run: for f in tests/*.test.js; do node "$f" || exit 1; done

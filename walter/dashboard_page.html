@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f18">
+<title>Walter: the list</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 17px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #0b0f18; color: #e8eefc; padding: 16px 14px calc(28px + env(safe-area-inset-bottom)); }
+  h1 { font-size: 22px; margin: 4px 2px 14px; font-weight: 650; }
+  h1 small { display: block; font-size: 13px; font-weight: 400; color: #8a9bbd; margin-top: 2px; }
+  form { background: #121a2a; border: 1px solid #1f2a40; border-radius: 16px; padding: 12px; margin-bottom: 18px; }
+  .seg { display: flex; gap: 6px; margin-bottom: 10px; }
+  .seg button { flex: 1; padding: 10px 0; border-radius: 10px; border: 1px solid #26324c; background: #0b0f18;
+    color: #9fb0d0; font-size: 15px; font-weight: 600; }
+  .seg button.on { background: #58c4ff; border-color: #58c4ff; color: #05060a; }
+  input { width: 100%; padding: 13px 12px; font-size: 17px; border-radius: 10px; border: 1px solid #26324c;
+    background: #070a12; color: #fff; outline: none; }
+  input:focus { border-color: #58c4ff; }
+  .row { display: flex; gap: 8px; margin-top: 8px; }
+  .row input { flex: 1; font-size: 15px; }
+  .add { padding: 0 20px; border: 0; border-radius: 10px; background: #58c4ff; color: #05060a; font-size: 17px; font-weight: 700; }
+  .msg { min-height: 20px; font-size: 14px; color: #8a9bbd; margin: 6px 2px 0; }
+  .msg.err { color: #ff8a8a; } .msg.ok { color: #8affc1; }
+  h2 { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: #8a9bbd; margin: 18px 4px 8px; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { display: flex; align-items: center; gap: 10px; background: #121a2a; border: 1px solid #1a2336;
+    border-radius: 12px; padding: 4px 4px 4px 4px; margin-bottom: 6px; }
+  li .tick { flex: none; width: 44px; height: 44px; border: 0; background: none; padding: 0; }
+  li .tick i { display: block; width: 24px; height: 24px; margin: 0 auto; border-radius: 7px; border: 2px solid #58c4ff; }
+  li.done .tick i { background: #58c4ff; position: relative; }
+  li.done .tick i::after { content: ""; position: absolute; left: 6px; top: 1px; width: 6px; height: 12px;
+    border: solid #05060a; border-width: 0 3px 3px 0; transform: rotate(45deg); }
+  li .t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  li .due { display: block; font-size: 13px; color: #ffd27a; }
+  li.done .t { color: #6f7f9f; text-decoration: line-through; }
+  li .del { flex: none; width: 44px; height: 44px; border: 0; background: none; color: #6f7f9f; font-size: 24px; line-height: 1; }
+  .empty { color: #6f7f9f; font-size: 15px; padding: 4px 6px; }
+  .off { color: #ff8a8a; font-size: 14px; margin: 8px 2px; display: none; }
+</style>
+</head>
+<body>
+<h1 id="title">The list<small>Shows on Walter's screen while he sleeps</small></h1>
+<form id="f" autocomplete="off">
+  <div class="seg" id="seg">
+    <button type="button" data-s="tasks" class="on">To do</button>
+    <button type="button" data-s="shopping">Shopping</button>
+    <button type="button" data-s="notes">Notes</button>
+  </div>
+  <div class="row" style="margin-top:0">
+    <input id="text" maxlength="160" placeholder="Add a task…" enterkeyhint="done">
+    <button class="add" type="submit">Add</button>
+  </div>
+  <div class="row"><input id="due" maxlength="40" placeholder="When? (optional: today, friday 5pm, 11/20)"></div>
+  <div class="msg" id="msg"></div>
+</form>
+<div class="off" id="off">Can't reach Walter. Are you on the home Wi-Fi?</div>
+<div id="lists"></div>
+<script>
+(function () {
+  "use strict";
+  var NAMES = { tasks: "To do", shopping: "Shopping", notes: "Notes" };
+  var HINT = { tasks: "Add a task…", shopping: "Add something to buy…", notes: "Add a note…" };
+  var section = "tasks", busy = false;
+  var $ = function (id) { return document.getElementById(id); };
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function say(t, cls) { var m = $("msg"); m.textContent = t || ""; m.className = "msg " + (cls || ""); }
+  function dueText(d) {
+    if (!d) return "";
+    var dt = new Date(d.length === 10 ? d + "T12:00" : d);
+    if (isNaN(dt)) return d;
+    var s = dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    if (d.length > 10) s += ", " + dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+    return s;
+  }
+  function render(data) {
+    $("off").style.display = "none";
+    if (data.title) { $("title").firstChild.nodeValue = data.title; document.title = data.title; }
+    var h = "";
+    ["tasks", "shopping", "notes"].forEach(function (s) {
+      var items = (data.items || []).filter(function (i) { return i.section === s; });
+      items.sort(function (a, b) { return (a.done_at ? 1 : 0) - (b.done_at ? 1 : 0); });
+      h += "<h2>" + NAMES[s] + "</h2><ul>";
+      if (!items.length) h += '<li class="empty" style="background:none;border:0">Nothing here.</li>';
+      items.forEach(function (i) {
+        h += '<li class="' + (i.done_at ? "done" : "") + '"><button class="tick" data-a="' + (i.done_at ? "undone" : "done") +
+          '" data-id="' + i.id + '" aria-label="Tick off"><i></i></button><span class="t">' + esc(i.text) +
+          (i.due ? '<span class="due">' + esc(dueText(i.due)) + "</span>" : "") +
+          '</span><button class="del" data-a="remove" data-id="' + i.id + '" aria-label="Delete">&times;</button></li>';
+      });
+      h += "</ul>";
+    });
+    $("lists").innerHTML = h;
+  }
+  function call(body) {
+    var opt = body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {};
+    return fetch("/api/dashboard", opt).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok) throw new Error(j.error || ("error " + r.status));
+        return j;
+      });
+    });
+  }
+  function load() {
+    if (busy) return;
+    call().then(render).catch(function () { $("off").style.display = "block"; });
+  }
+  $("seg").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    section = b.getAttribute("data-s");
+    Array.prototype.forEach.call(this.children, function (x) { x.className = x === b ? "on" : ""; });
+    $("text").placeholder = HINT[section]; $("text").focus();
+  });
+  $("f").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var t = $("text").value.trim(); if (!t) return;
+    busy = true; say("Adding…");
+    call({ action: "add", text: t, section: section, due: $("due").value.trim() }).then(function (j) {
+      $("text").value = ""; $("due").value = ""; say("Added: " + j.item.text, "ok"); render(j);
+    }).catch(function (err) { say(err.message, "err"); }).then(function () { busy = false; });
+  });
+  $("lists").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-a]"); if (!b) return;
+    var a = b.getAttribute("data-a");
+    if (a === "remove" && !confirm("Delete this?")) return;
+    busy = true;
+    call({ action: a, id: +b.getAttribute("data-id") }).then(function (j) { say(""); render(j); })
+      .catch(function (err) { say(err.message, "err"); }).then(function () { busy = false; });
+  });
+  load(); setInterval(load, 15000);
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) load(); });
+})();
+</script>
+</body>
+</html>

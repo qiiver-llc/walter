@@ -1,0 +1,14 @@
+# Walter: ALSA names for the echo-cancelled PipeWire devices
+# (deploy/pipewire/60-walter-echo-cancel.conf). Walter's Python audio
+# (sounddevice/PortAudio) talks ALSA, so these give it something to open.
+# Installed as ~/.asoundrc (or appended to it) by deploy/install.sh.
+pcm.walter_aec_mic {
+    type pipewire
+    capture_node "walter_aec_source"
+    hint { show on description "Walter microphone (echo-cancelled)" }
+}
+pcm.walter_aec_speaker {
+    type pipewire
+    playback_node "walter_aec_sink"
+    hint { show on description "Walter speaker (echo-cancelled)" }
+}

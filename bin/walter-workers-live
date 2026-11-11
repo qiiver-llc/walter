@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Live worker status for the face: writes face/dashboard-workers.json every ~3 s while
+# workers run (15 s when idle). Runs as walter-workers-live.service, separate from Walter,
+# so it works without restarting him. One-off snapshot: walterctl tasks --live
+here="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+cd "$here" && exec nice -n 10 python3 -m walter.workerlive --out "$here/face/dashboard-workers.json" --loop 3 --idle 15 "$@"

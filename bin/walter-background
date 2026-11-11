@@ -1,0 +1,235 @@
+#!/home/walter/walter/.venv/bin/python
+"""walter-background: choose the scenic picture behind Walter's face.
+
+  walter-background list [--tag T]          pictures with their tags
+  walter-background current                 what's showing (and the mode)
+  walter-background set NAME|FILE           show a picture (name, file name, or a path to
+                                            any JPEG/PNG/WebP, which gets copied in)
+  walter-background next | prev             step through the pictures
+  walter-background random [--tag T ...]    random picture matching all tags
+                                            (e.g. --tag night, --tag autumn --tag calm)
+  walter-background auto [--every MIN] [--lat L --lon L]
+                                            rotate by itself to suit the time of day and season
+                                            (night after dusk, sunrise/sunset pictures around them)
+  walter-background off                     plain dark background again
+  walter-background motion on|off           slow Ken Burns drift (default on)
+  walter-background dim N                   0.5 brighter .. 1 normal .. 1.5 darker
+
+Tags (index.json): time day/night/sunrise/sunset, mood calm/bright/dark,
+season spring/summer/autumn/winter/any, weather clear/clouds/overcast/fog/snow/storm,
+scene lake/mountains/prairie/plains/forest/coast/sea/stars/river/snow/...
+set/next/prev/random switch auto off; 'auto' turns it back on.
+
+Writes face/background.json with a fixed old mtime (the face polls it every 3 s,
+and the face's auto-reload ignores it).
+"""
+import argparse, datetime as dt, json, math, os, random, re, shutil, sys, tempfile, time
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+FACE = REPO / "face"
+BGDIR = FACE / "backgrounds"
+CUSTOM = BGDIR / "custom"
+STATE = FACE / "background.json"
+FIXED_MTIME = 946684800  # 2000-01-01: never looks like a face edit
+MAGIC = {b"\xff\xd8\xff": ".jpg", b"\x89PNG": ".png", b"RIFF": ".webp"}
+
+
+def load_index():
+    imgs = json.loads((BGDIR / "index.json").read_text())["images"]
+    if CUSTOM.is_dir():
+        for p in sorted(CUSTOM.iterdir()):
+            if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"):
+                imgs.append({"file": "custom/" + p.name, "name": p.stem, "title": "(added picture)", "tags": {}})
+    return imgs
+
+
+def state():
+    try:
+        return json.loads(STATE.read_text())
+    except Exception:
+        return {"mode": "off", "motion": True, "every": 45}
+
+
+def write(**changes):
+    s = state()
+    s.update(changes)
+    s["id"] = time.time()
+    fd, tmp = tempfile.mkstemp(dir=REPO, prefix=".bg-", suffix=".tmp")  # outside face/: no reload
+    with os.fdopen(fd, "w") as f:
+        json.dump(s, f)
+    os.chmod(tmp, 0o644)
+    os.utime(tmp, (FIXED_MTIME, FIXED_MTIME))
+    os.replace(tmp, STATE)
+    return s
+
+
+def tag_values(im):
+    vals = {im["name"]}
+    for v in (im.get("tags") or {}).values():
+        vals.update(v if isinstance(v, list) else [v])
+    return {str(v).lower() for v in vals}
+
+
+def find(imgs, query):
+    q = query.lower().removesuffix(".jpg")
+    for im in imgs:
+        if q in (im["name"].lower(), im["file"].lower().removesuffix(".jpg")):
+            return im
+    hits = [im for im in imgs if q in im["name"].lower() or q in im.get("title", "").lower()]
+    return hits[0] if len(hits) == 1 else (hits or None)
+
+
+def add_custom(path: Path):
+    head = path.read_bytes()[:4]
+    ext = next((e for m, e in MAGIC.items() if head.startswith(m)), None)
+    if not ext or path.stat().st_size > 15 * 1024 * 1024:
+        sys.exit("Not a JPEG/PNG/WebP picture (or bigger than 15 MB): %s" % path)
+    CUSTOM.mkdir(parents=True, exist_ok=True)
+    name = re.sub(r"[^a-z0-9]+", "-", path.stem.lower()).strip("-") or "picture"
+    dest = CUSTOM / (name + ext)
+    shutil.copyfile(path, dest)
+    os.utime(dest, (FIXED_MTIME, FIXED_MTIME))
+    return "custom/" + dest.name
+
+
+# ---- auto mode: same choice as pick() in face/background.js
+def sun_elevation(t: float, lat: float, lon: float) -> float:
+    r = math.pi / 180
+    d = t / 86400 + 2440587.5 - 2451545.0
+    g = (357.529 + 0.98560028 * d) * r
+    q = 280.459 + 0.98564736 * d
+    L = (q + 1.915 * math.sin(g) + 0.020 * math.sin(2 * g)) * r
+    e = (23.439 - 0.00000036 * d) * r
+    ra = math.atan2(math.cos(e) * math.sin(L), math.cos(L))
+    dec = math.asin(math.sin(e) * math.sin(L))
+    gmst = math.fmod(18.697374558 + 24.06570982441908 * d, 24)
+    ha = (gmst * 15 + lon) * r - ra
+    return math.asin(math.sin(lat * r) * math.sin(dec) + math.cos(lat * r) * math.cos(dec) * math.cos(ha)) / r
+
+
+def default_lon():
+    y = dt.datetime.now().year
+    offs = [dt.datetime(y, m, 1).astimezone().utcoffset().total_seconds() / 60 for m in (1, 7)]
+    return min(offs) / 4  # standard time offset, 15 degrees per hour
+
+
+def auto_pick(imgs, s, now=None):
+    now = now or time.time()
+    lat = s.get("lat", 45) if s.get("lat") is not None else 45
+    lon = s.get("lon") if s.get("lon") is not None else default_lon()
+    every = max(5, s.get("every") or 45)
+    el = sun_elevation(now, lat, lon)
+    bucket = "night" if el < -6 else "day" if el > 10 else (
+        "sunrise" if sun_elevation(now + 600, lat, lon) > el else "sunset")
+    m = dt.datetime.fromtimestamp(now).month - 1
+    sea = "winter" if m <= 1 or m == 11 else "spring" if m <= 4 else "summer" if m <= 7 else "autumn"
+    if lat < 0:
+        sea = {"winter": "summer", "summer": "winter", "spring": "autumn", "autumn": "spring"}[sea]
+    c = [im for im in imgs if (im.get("tags") or {}).get("time") == bucket]
+    ins = [im for im in c if im["tags"].get("season") in (sea, "any")]
+    if len(ins) >= 3:
+        c = ins
+    c = sorted(c or imgs, key=lambda im: im["file"])
+    slot = int(now // 60 // every)
+    return (c[slot % len(c)] if c else None), bucket
+
+
+def describe(im):
+    t = im.get("tags") or {}
+    bits = [t.get("time"), t.get("mood"), t.get("season"), t.get("weather")] + list(t.get("scene") or [])
+    return "%-24s %s  [%s]" % (im["name"], im.get("title", ""), ", ".join(b for b in bits if b))
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("cmd", choices=["list", "current", "set", "next", "prev", "random", "auto", "off", "motion", "dim"])
+    ap.add_argument("arg", nargs="?")
+    ap.add_argument("--tag", action="append", default=[])
+    ap.add_argument("--every", type=float)
+    ap.add_argument("--lat", type=float)
+    ap.add_argument("--lon", type=float)
+    a = ap.parse_args()
+    imgs, s = load_index(), state()
+
+    if a.cmd == "list":
+        for im in imgs:
+            if all(t.lower() in tag_values(im) for t in a.tag):
+                print(describe(im))
+    elif a.cmd == "current":
+        mode = s.get("mode", "off")
+        if mode == "auto":
+            im, bucket = auto_pick(imgs, s)
+            print("auto (every %g min, %s pictures now): %s" % (s.get("every") or 45, bucket, describe(im) if im else "none"))
+        elif mode == "manual" and s.get("file"):
+            im = next((x for x in imgs if x["file"] == s["file"]), {"name": s["file"], "file": s["file"]})
+            print("manual: " + describe(im))
+        else:
+            print("off (plain dark background)")
+        print("motion %s, dim %g" % ("on" if s.get("motion", True) else "off", s.get("dim", 1)))
+    elif a.cmd == "set":
+        if not a.arg:
+            sys.exit("set what? Give a name from 'walter-background list' or a picture file.")
+        p = Path(a.arg).expanduser()
+        if p.is_file() and not (p.resolve().parent == BGDIR.resolve()):
+            f = add_custom(p)
+            write(mode="manual", file=f)
+            print("showing", f)
+            return
+        im = find(imgs, p.name if p.is_file() else a.arg)
+        if isinstance(im, list):
+            sys.exit("Several match: " + ", ".join(x["name"] for x in im))
+        if not im:
+            sys.exit("No picture called %r. Try 'walter-background list'." % a.arg)
+        write(mode="manual", file=im["file"])
+        print("showing " + describe(im))
+    elif a.cmd in ("next", "prev"):
+        files = [im["file"] for im in imgs]
+        cur = s.get("file") if s.get("mode") == "manual" else None
+        if s.get("mode") == "auto":
+            cur = (auto_pick(imgs, s)[0] or {}).get("file")
+        i = files.index(cur) if cur in files else -1
+        im = imgs[(i + (1 if a.cmd == "next" else -1)) % len(imgs)]
+        write(mode="manual", file=im["file"])
+        print("showing " + describe(im))
+    elif a.cmd == "random":
+        pool = [im for im in imgs if all(t.lower() in tag_values(im) for t in a.tag)]
+        if not pool:
+            sys.exit("No pictures tagged %s." % " + ".join(a.tag))
+        others = [im for im in pool if im["file"] != s.get("file")] or pool
+        im = random.choice(others)
+        write(mode="manual", file=im["file"])
+        print("showing " + describe(im))
+    elif a.cmd == "auto":
+        if a.arg in ("off", "stop"):
+            s2 = write(mode="manual" if s.get("file") else "off")
+            print("auto off; now", s2["mode"])
+            return
+        ch = {"mode": "auto"}
+        if a.every:
+            ch["every"] = max(5, a.every)
+        if a.lat is not None:
+            ch["lat"] = a.lat
+        if a.lon is not None:
+            ch["lon"] = a.lon
+        s2 = write(**ch)
+        im, bucket = auto_pick(imgs, s2)
+        print("auto on (every %g min); %s pictures now, showing %s" % (s2.get("every") or 45, bucket, im["name"] if im else "none"))
+    elif a.cmd == "off":
+        write(mode="off")
+        print("background off")
+    elif a.cmd == "motion":
+        on = (a.arg or "on").lower() not in ("off", "0", "no", "false")
+        write(motion=on)
+        print("motion", "on" if on else "off")
+    elif a.cmd == "dim":
+        try:
+            v = min(1.6, max(0.3, float(a.arg)))
+        except (TypeError, ValueError):
+            sys.exit("dim needs a number: 0.5 brighter .. 1 normal .. 1.5 darker")
+        write(dim=v)
+        print("dim", v)
+
+
+if __name__ == "__main__":
+    main()

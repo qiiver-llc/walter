@@ -1,0 +1,175 @@
+name: USB installer
+
+# Builds the one-file USB installer, installs it end-to-end in virtual
+# machines (old BIOS laptops and modern UEFI ones), and only if both pass
+# publishes it as the "Walter USB installer (latest)" release.
+#
+# Public-repo safety: never runs on pull requests (tests for PRs live in tests.yml, with
+# no secrets); read-only token by default; only the release job may write, and only for
+# a maintainer's manual run or an installer-v* tag on the Qiiver repo itself.
+
+on:
+  push:
+    branches: [main]
+    tags: ["installer-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - run: pip install aiohttp numpy qrcode pytest cryptography pywebpush
+      - run: python -m pytest -q tests
+
+  kiosk-debug:
+    # Quick check that Debian's browser can show Walter's face under cage
+    # (headless), with a backtrace if it crashes. Informational only.
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - run: docker run --rm --privileged -v "$PWD:/w" debian:trixie bash /w/iso/kiosk-debug.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: kiosk-debug-screens, path: "*.png", if-no-files-found: ignore }
+
+  build:
+    needs: unit-tests
+    runs-on: ubuntu-24.04
+    # built inside Debian: the hosted runner's own apt could not resolve the Ubuntu mirrors (11 Nov)
+    container: debian:trixie
+    steps:
+      - run: apt-get -o Acquire::Retries=5 update && apt-get -o Acquire::Retries=5 install -y --no-install-recommends xorriso curl ca-certificates git
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/cache@v4
+        with:
+          path: .iso-cache
+          key: debian-netinst-${{ github.run_id }}
+          restore-keys: debian-netinst-
+      - run: ./iso/build-iso.sh walter-installer.iso
+      - uses: actions/upload-artifact@v4
+        with:
+          name: walter-installer
+          path: walter-installer.iso
+          retention-days: 5
+          compression-level: 0
+
+  vm-test:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        firmware: [bios, uefi]
+        cpu: [host]
+        vga: [std]
+        experimental: [false]
+
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/download-artifact@v4
+        with: { name: walter-installer }
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - name: Make sure apt can resolve its mirrors
+        run: |
+          if ! getent hosts archive.ubuntu.com >/dev/null; then
+            echo "runner DNS cannot resolve the Ubuntu mirrors; using public resolvers for this job"
+            sudo rm -f /etc/resolv.conf
+            printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' | sudo tee /etc/resolv.conf >/dev/null
+          fi
+          getent hosts archive.ubuntu.com
+      - run: sudo apt-get -o Acquire::Retries=5 update && sudo apt-get -o Acquire::Retries=5 install -y qemu-system-x86 qemu-utils ovmf socat python3-pil
+      - name: Install Walter in a VM
+        env: { QEMU_CPU: "${{ matrix.cpu }}", QEMU_VGA: "${{ matrix.vga }}", VM_DEBUG: "1" }
+        run: OUT_DIR=$PWD/qemu-${{ matrix.firmware }} ./iso/test-in-qemu.sh walter-installer.iso ${{ matrix.firmware }}
+      - name: Collect logs from the VM disk
+        if: always()
+        run: |
+          set +e
+          D=qemu-${{ matrix.firmware }}
+          sudo modprobe nbd max_part=8
+          sudo qemu-nbd -c /dev/nbd0 $D/disk.qcow2 && sleep 2
+          for p in /dev/nbd0p*; do
+            mkdir -p /tmp/m && sudo mount -o ro $p /tmp/m 2>/dev/null || continue
+            if [ -d /tmp/m/var/log ]; then
+              sudo cp /tmp/m/var/log/walter-firstboot.log /tmp/m/var/log/installer/syslog $D/ 2>/dev/null
+              sudo cp /tmp/m/home/walter/.walter/kiosk.log $D/ 2>/dev/null
+              sudo journalctl -D /tmp/m/var/log/journal --no-pager -n 400 > $D/journal-tail.txt 2>/dev/null
+            fi
+            sudo umount /tmp/m
+          done
+          sudo qemu-nbd -d /dev/nbd0
+          sudo chmod -R a+r $D; rm -f $D/disk.qcow2 $D/vars.fd
+      - name: Show what happened (logs + screenshots in words)
+        if: always()
+        run: |
+          D=qemu-${{ matrix.firmware }}
+          [ -f $D/walter-firstboot.log ] && { echo "::group::first boot (last 15 lines)"; tail -n 15 $D/walter-firstboot.log; echo "::endgroup::"; }
+          [ -f $D/kiosk.log ] && { echo "::group::kiosk levels"; grep -aE "level|face is up|no face|cpu|dri|gpu" $D/kiosk.log | tail -n 30; echo "::endgroup::";
+                                   echo "::group::kiosk.log (last 40 lines)"; grep -avE "crashpad|^Try |dbus|Floss|UPower|ScreenSaver|PropertiesChanged|bluez" $D/kiosk.log | tr -cd "[:print:]\n" | tail -n 60; echo "::endgroup::"; }
+          [ -f $D/journal-tail.txt ] && { echo "::group::journal (walter lines)"; grep -iE "apparmor|audit|denied|sandbox|seccomp|walter\\.|firefox" $D/journal-tail.txt | tail -n 40; echo "::endgroup::"; }
+          for f in $(ls $D/*.png 2>/dev/null | sort); do python3 iso/describe-screenshot.py "$f"; done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vm-test-${{ matrix.firmware }}-${{ matrix.cpu }}-${{ matrix.vga }}
+          path: qemu-${{ matrix.firmware }}
+
+  release:
+    needs: vm-test
+    if: >-
+      github.repository_owner == 'qiiver-llc' &&
+      (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/installer-v'))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/download-artifact@v4
+        with: { name: walter-installer }
+      - name: Publish "installer-latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete installer-latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create installer-latest walter-installer.iso \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "Walter USB installer (latest)" \
+            --notes "Built from ${GITHUB_SHA::7} and installed end-to-end in BIOS and UEFI virtual machines.
+
+          1. Download **walter-installer.iso** below.
+          2. Flash it to a USB stick (4 GB+) with balenaEtcher.
+          3. Plug in an Ethernet cable if you can, boot the laptop from the USB. **It erases the laptop.**
+          4. Wait (30-60 min, it restarts a couple of times), then scan the QR code on Walter's screen with your phone."
+          # gh sometimes leaves the release as a draft (invisible to everyone):
+          # publish it explicitly and check it can really be downloaded.
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/installer-latest/walter-installer.iso"
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            gh release edit installer-latest --draft=false --prerelease || true
+            if curl -fsSL -r 0-1023 -o /dev/null "$url" \
+               && curl -fsS -o /dev/null "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/installer-latest"; then
+              echo "published: $url"; exit 0
+            fi
+            echo "not public yet (try $i)"; sleep 15
+          done
+          echo "::error::installer-latest is not publicly downloadable"; exit 1

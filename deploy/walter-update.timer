@@ -1,0 +1,11 @@
+[Unit]
+Description=Check for Walter updates nightly and shortly after boot
+
+[Timer]
+OnBootSec=15min
+OnCalendar=*-*-* 03:40
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

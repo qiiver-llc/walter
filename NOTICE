@@ -1,0 +1,65 @@
+Walter
+Copyright 2026 Qiiver LLC
+
+This product includes software developed by Qiiver LLC, licensed under the
+Apache License, Version 2.0 (see LICENSE).
+
+"Walter" and the Walter face are names and marks of Qiiver LLC. The Apache
+License does not grant permission to use them (section 6 of the License).
+
+-------------------------------------------------------------------------------
+Third-party components
+-------------------------------------------------------------------------------
+
+Bundled in this repository
+--------------------------
+face/vendor/ (unmodified minified builds, see face/vendor/README.md)
+  - marked 12.0.2 .................. MIT
+  - DOMPurify 3.1.6 ................ Apache-2.0 or MPL-2.0 (used under Apache-2.0)
+  - highlight.js 11.10.0 ........... BSD-3-Clause (incl. the github-dark theme)
+  - Chart.js 4.4.4 ................. MIT
+
+face/backgrounds/*.jpg
+  Public domain (US National Park Service, US Fish & Wildlife Service) or
+  CC0 1.0; author and source per picture in face/backgrounds/README.md.
+
+sounds/laugh/*.wav
+  Cut from Freesound clips released under CC0 1.0; sources in
+  sounds/laugh/README.md.
+
+Installed at setup time, not bundled (requirements.txt, deploy/install.sh)
+-------------------------------------------------------------------------
+Python packages, used as libraries:
+  - aiohttp ........................ Apache-2.0
+  - numpy .......................... BSD-3-Clause
+  - sounddevice .................... MIT
+  - webrtcvad-wheels ............... MIT (WebRTC VAD code: BSD-3-Clause)
+  - faster-whisper ................. MIT (includes the Silero VAD model, MIT)
+  - CTranslate2 / Whisper models ... MIT
+  - qrcode ......................... BSD-3-Clause
+  - opencv-python-headless ......... Apache-2.0
+  - sherpa-onnx .................... Apache-2.0 (speaker embedding models: see
+                                     their model cards)
+  - audiotsm ....................... MIT
+  - pywebpush ...................... MPL-2.0 (optional)
+  - zeroconf ....................... LGPL-2.1-or-later (optional; used unmodified
+                                     as a dynamically imported library)
+  - onnxruntime .................... MIT (optional Kokoro voice)
+
+Separate programs Walter starts as their own processes (not linked into Walter):
+  - Piper text-to-speech (piper-tts 1.3+) ... GPL-3.0
+  - espeak-ng (used by Piper) .............. GPL-3.0
+  - mpv (podcasts, radio) .................. GPL-2.0+/LGPL-2.1+
+  - Chromium (kiosk face, wall browser) .... BSD-3-Clause and others
+  - cloudflared (optional Cloud Link) ...... Apache-2.0
+  - Claude Code CLI (the brain) ............ Anthropic commercial terms; each
+                                             household signs in with its own
+                                             Claude account
+
+Models downloaded on first use (each under its own licence, see its model card):
+  - Piper voices (rhasspy/piper-voices): per-voice licence
+  - Kokoro-82M (optional local voice) ..... Apache-2.0
+  - Silero VAD ............................ MIT
+
+This list is maintained by hand. If you spot a missing or wrong entry, please
+open an issue.

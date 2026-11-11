@@ -1,0 +1,10 @@
+# walter-desktop (docs/DESKTOP.md). The launcher itself is stdlib only; each line adds a feature.
+numpy>=1.24          # microphone (with sounddevice)
+sounddevice>=0.4.6   # microphone + speaker device checks
+zeroconf>=0.130      # finds the wall by itself (mDNS)
+pystray>=0.19        # tray icon (Open face / Mute / Stop hands / Quit)
+pillow>=10           # tray icon image, screenshot downscaling + click grid for hands
+# optional, not installed by default:
+#   webrtcvad-wheels faster-whisper   local speech-to-text on the laptop (else the wall transcribes)
+#   pynput                            global kill-switch hotkey for hands (X11, macOS, Windows)
+#   pyautogui                         hands backend on Windows (else PowerShell)

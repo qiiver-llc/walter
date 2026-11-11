@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+"""claude-usage: write the owner's Claude plan usage to face/usage.json for the face.
+
+Reads the OAuth access token Claude Code keeps in ~/.claude/.credentials.json
+(never printed or logged) and asks the same endpoint Claude Code's /usage uses:
+  GET https://api.anthropic.com/api/oauth/usage  (anthropic-beta: oauth-2025-04-20)
+On any failure it writes {"ok": false, ...} and the face hides the widget.
+It does not refresh the token itself (Claude Code does that while it runs).
+
+The face watcher reloads the page when a file in face/ changes mtime, so the
+file is written with a fixed mtime to avoid reloading the kiosk every update.
+Run by the systemd --user timer walter-usage.timer (every 5 minutes).
+"""
+import json, os, sys, time, urllib.request
+from pathlib import Path
+
+CREDS = Path.home() / ".claude" / ".credentials.json"
+OUT = Path(__file__).resolve().parent.parent / "face" / "usage.json"
+URL = "https://api.anthropic.com/api/oauth/usage"
+FIXED_MTIME = 1_700_000_000  # constant so the face watcher never sees a change
+
+
+def window(d):
+    if not isinstance(d, dict) or d.get("utilization") is None:
+        return None
+    return {"pct": round(float(d["utilization"]), 1), "resets_at": d.get("resets_at")}
+
+
+def fetch():
+    o = json.loads(CREDS.read_text()).get("claudeAiOauth") or {}
+    tok = o.get("accessToken")
+    if not tok:
+        return {"ok": False, "error": "no oauth token"}
+    if o.get("expiresAt") and o["expiresAt"] / 1000 < time.time():
+        return {"ok": False, "error": "token expired (Claude Code refreshes it when it next runs)"}
+    req = urllib.request.Request(URL, headers={
+        "Authorization": "Bearer " + tok,
+        "anthropic-beta": "oauth-2025-04-20",
+        "User-Agent": "walter-usage/1.0",
+        "Accept": "application/json",
+    })
+    with urllib.request.urlopen(req, timeout=15) as r:
+        data = json.load(r)
+    out = {"ok": True, "plan": o.get("subscriptionType"),
+           "session": window(data.get("five_hour")),
+           "week": window(data.get("seven_day"))}
+    if not out["session"] and not out["week"]:
+        return {"ok": False, "error": "no usage windows in response"}
+    return out
+
+
+def main():
+    try:
+        out = fetch()
+    except urllib.error.HTTPError as e:
+        out = {"ok": False, "error": f"HTTP {e.code}"}
+    except Exception as e:  # network, parse, missing file
+        out = {"ok": False, "error": type(e).__name__}
+    out["updated"] = int(time.time())
+    tmp = OUT.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(out) + "\n")
+    os.utime(tmp, (FIXED_MTIME, FIXED_MTIME))
+    os.replace(tmp, OUT)
+    print(json.dumps(out))
+    return 0 if out["ok"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

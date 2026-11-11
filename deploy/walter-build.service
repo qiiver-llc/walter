@@ -1,0 +1,8 @@
+[Unit]
+Description=Walter: build view for conversation mode (face/dashboard-build.json)
+
+[Service]
+Type=oneshot
+Nice=10
+WorkingDirectory=@REPO@
+ExecStart=/usr/bin/python3 -m walter.buildview --out @REPO@/face/dashboard-build.json

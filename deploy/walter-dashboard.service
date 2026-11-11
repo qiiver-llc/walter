@@ -1,0 +1,7 @@
+[Unit]
+Description=Walter: refresh the sleep dashboard (weather, alerts, phone QR code)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/walter/bin/walter-dashboard refresh

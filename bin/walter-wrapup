@@ -1,0 +1,164 @@
+#!/home/walter/walter/.venv/bin/python
+"""walter-wrapup: the evening wrap-up (routine, daily at 8:30 PM).
+
+  walter-wrapup            build it, show it, and say whether to speak
+  walter-wrapup --dry-run  print it only (no card, no dashboard, no away entries)
+
+What got done today (ticked-off list items), what's still open, tomorrow's first
+three events, the parked ideas, focus boxes done today (minutes per task), what's
+waiting in the inbox, and a suggested first focus box for tomorrow. Shown as a card on my face for 10 minutes and as
+a line at the top of the list on the sleep dashboard (until the morning).
+
+Last line of output, for me:
+  SPEAK: <one short sentence>   the owner is here and the mic is on: say it (one sentence)
+  SILENT                        nobody to hear it: reply only [silent]
+
+Also: if no phone is paired yet, a "Pair your phone" note goes in the away feed.
+"""
+import datetime as dt
+import json
+import sys
+import time
+import urllib.request
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from walter import dashboard as D  # noqa: E402
+from walter import focus as F  # noqa: E402
+
+URL = "http://127.0.0.1:8765"
+CARD_S = 600
+
+
+def status() -> dict:
+    try:
+        with urllib.request.urlopen(URL + "/api/status", timeout=5) as r:
+            return json.loads(r.read())
+    except Exception:
+        return {}
+
+
+def hm(d: dt.datetime) -> str:
+    return d.strftime("%I:%M %p").lstrip("0")
+
+
+def tomorrow_events(now: dt.datetime, n: int = 3) -> list[dict]:
+    try:
+        evs = json.loads((D.FACE_DIR / "dashboard-events.json").read_text()).get("events") or []
+    except (OSError, ValueError):
+        return []
+    tm = (now + dt.timedelta(days=1)).date()
+    out = []
+    for e in evs:
+        s = str(e.get("start") or "")
+        try:
+            if len(s) == 10:
+                d, all_day = dt.date.fromisoformat(s), True
+                when = None
+            else:
+                when = dt.datetime.fromisoformat(s.replace("Z", "+00:00"))
+                when = when.astimezone() if when.tzinfo else when
+                d, all_day = when.date(), bool(e.get("all_day"))
+        except ValueError:
+            continue
+        if d == tm:
+            out.append({"title": e.get("title", ""), "time": "All day" if all_day else hm(when),
+                        "sort": -1 if all_day else when.timestamp()})
+    out.sort(key=lambda x: x["sort"])
+    return out[:n]
+
+
+def build(now: dt.datetime | None = None, items: list | None = None, events: list | None = None,
+          boxes: list | None = None) -> dict:
+    now = now or dt.datetime.now()
+    items = D.ListStore().items() if items is None else items
+    today = now.date()
+    done = [i for i in items if i.get("done_at") and dt.date.fromtimestamp(i["done_at"]) == today]
+    open_ = [i for i in items if not i.get("done_at") and i["section"] in ("tasks", "shopping")]
+    ideas = [i for i in items if not i.get("done_at") and i["section"] == "ideas"]
+    evs = tomorrow_events(now) if events is None else events
+    lines = []
+    if done:
+        lines.append("Done today: " + "; ".join(i["text"] for i in done[:5]) + (f" (+{len(done) - 5})" if len(done) > 5 else ""))
+    else:
+        lines.append("Done today: nothing ticked off")
+    if open_:
+        lines.append("Still open: " + "; ".join(i["text"] for i in open_[:5]) + (f" (+{len(open_) - 5})" if len(open_) > 5 else ""))
+    else:
+        lines.append("Still open: nothing. All clear!")
+    if evs:
+        lines.append("Tomorrow: " + "; ".join(f"{e['time']} {e['title']}" for e in evs))
+    else:
+        lines.append("Tomorrow: nothing on the calendar yet")
+    if ideas:
+        lines.append("Parked ideas: " + "; ".join(i["text"] for i in ideas[:3]) + (f" (+{len(ideas) - 3})" if len(ideas) > 3 else ""))
+    boxes = F.FocusStore().today(today) if boxes is None else boxes
+    per = F.summarize_day(boxes)
+    if per:
+        total = sum(m for _, m, _ in per)
+        lines.append(f"Focus: {F.mins_text(total)} in {len(boxes)} box{'es' if len(boxes) != 1 else ''}: " + "; ".join(
+            f"{t} {F.mins_text(m)}" + (" (done)" if d else "") for t, m, d in per[:5]))
+    inbox = F.inbox_items(items)
+    if inbox:
+        lines.append(f"Inbox: {len(inbox)} to sort (do, defer, delegate or drop)")
+    first_box = F.suggest_first_box(items, boxes)
+    if first_box:
+        lines.append(f"Tomorrow's first box: 25 min on {first_box}")
+    first = next((e for e in evs if e["time"] != "All day"), evs[0] if evs else None)
+    line = f"Today: {len(done)} done, {len(open_)} open."
+    if first:
+        line += f" Tomorrow starts with {first['title']}" + (f" at {first['time']}." if first["time"] != "All day" else ".")
+    sentence = (f"Quick wrap-up: {len(done)} thing{'s' if len(done) != 1 else ''} done today, "
+                f"{len(open_)} still open" + (f", and tomorrow starts with {first['title']}"
+                                              + (f" at {first['time']}" if first["time"] != "All day" else "")
+                                              if first else "") + "."
+                + (f" You put in {F.spoken_mins(sum(m for _, m, _ in per))} of focus." if per else "")
+                + (f" First box tomorrow: {first_box}?" if first_box else "")
+                + " It's on the screen.")
+    if per:
+        line += f" Focus {F.mins_text(sum(m for _, m, _ in per))}."
+    return {"lines": lines, "line": line, "sentence": sentence, "done": len(done), "open": len(open_),
+            "focus_min": round(sum(m for _, m, _ in per)), "first_box": first_box}
+
+
+def pair_nudge():
+    """No phone paired yet: leave a note in the away feed (once a day)."""
+    try:
+        from walter import devices as DV
+        if DV.DeviceStore().list():
+            return
+    except Exception:
+        return
+    feed = D.AwayFeed()
+    today = dt.date.today()
+    if any(i["title"] == "Pair your phone" and dt.date.fromtimestamp(i["t"]) == today for i in feed.items()):
+        return
+    D.add_away("Pair your phone", "Say \"Walter, pair my phone\" (walterctl pair) and reminders will "
+                                  "reach you even when you're away from the wall.", kind="tip", push=False)
+
+
+def main(argv):
+    if "-h" in argv or "--help" in argv:
+        print(__doc__.strip())
+        return 0
+    w = build()
+    print("\n".join(w["lines"]))
+    if "--dry-run" in argv:
+        print("SPEAK: " + w["sentence"])
+        return 0
+    now = time.time()
+    morning = dt.datetime.combine(dt.date.today() + dt.timedelta(days=1), dt.time(8, 0)).timestamp()
+    D.write_face_json(D.FACE_DIR / "dashboard-wrapup.json",
+                      {"updated": now, "until": morning, "line": w["line"], "lines": w["lines"]})
+    D.show_card("Evening wrap-up", "\n".join(w["lines"]), CARD_S)
+    pair_nudge()
+    st = status()
+    p = st.get("presence") or {}
+    here = bool(p.get("present")) or (p.get("camera") not in ("on",) and not p.get("room_empty"))
+    can_hear = st and not st.get("mic_muted") and not st.get("sleeping") and st.get("state") != "sleeping"
+    print(("SPEAK: " + w["sentence"]) if (can_hear and here) else "SILENT")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

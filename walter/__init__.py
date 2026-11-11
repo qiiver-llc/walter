@@ -1,0 +1,1 @@
+"""Walter the Wall Buddy."""

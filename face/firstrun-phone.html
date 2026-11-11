@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set up Walter</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: #05060a; color: #e8eefc; line-height: 1.45; }
+  main { max-width: 520px; margin: 0 auto; padding: 20px 18px 60px; }
+  .dots { display: flex; gap: 6px; justify-content: center; margin: 4px 0 16px; flex-wrap: wrap; }
+  .dot { width: 30px; height: 30px; border-radius: 15px; border: 2px solid #2a3550; background: none; color: #9fb0d0; padding: 0; font-size: .85rem; width: 30px; }
+  .dot.done { background: #58c4ff; color: #05060a; border-color: #58c4ff; }
+  .dot.skipped { border-style: dashed; }
+  .dot.cur { border-color: #8affc1; color: #fff; }
+  h1 { font-size: 1.4rem; margin: 0 0 6px; text-align: center; }
+  .sub { color: #9fb0d0; text-align: center; margin: 0 0 18px; }
+  .card { background: #0d111b; border: 1px solid #1d2638; border-radius: 16px; padding: 16px; margin-bottom: 12px; }
+  .card h2 { font-size: 1rem; margin: 0 0 8px; }
+  .card p { margin: 0 0 10px; color: #b9c6e0; font-size: .95rem; }
+  button { display: block; width: 100%; box-sizing: border-box; padding: 13px; border: 0; border-radius: 12px; background: #58c4ff;
+           color: #05060a; font-size: 1rem; font-weight: 650; margin-top: 8px; }
+  button.ghost { background: none; color: #9fb0d0; border: 1px solid #2a3550; }
+  button:disabled { opacity: .5; }
+  input, select { width: 100%; box-sizing: border-box; padding: 11px; border-radius: 10px; border: 1px solid #2a3550; background: #070a12;
+           color: #fff; font-size: 1rem; margin-bottom: 8px; font-family: inherit; }
+  label.check { display: flex; gap: 10px; align-items: flex-start; margin: 10px 0; }
+  label.check input { width: 22px; height: 22px; margin: 2px 0 0; flex: none; }
+  label.check small { display: block; color: #9fb0d0; font-weight: 400; }
+  .msg { margin-top: 8px; min-height: 1.2em; font-size: .95rem; }
+  .err { color: #ff8a8a; } .ok { color: #8affc1; }
+  .meter { height: 12px; background: #10182a; border-radius: 6px; overflow: hidden; margin: 8px 0; }
+  .meter div { height: 100%; width: 0; background: #8affc1; }
+  .pick { text-align: left; background: #111827; color: #e8eefc; font-weight: 500; }
+  .step { display: none; }
+  .code { font-size: 2.2rem; text-align: center; letter-spacing: 4px; font-weight: 700; }
+</style>
+</head>
+<body>
+<main>
+  <div class="dots" id="dots"></div>
+
+  <section class="step" data-step="welcome">
+    <h1>Hi! Let's set up Walter</h1>
+    <p class="sub">About 15 minutes. Every step can be skipped and changed later in the app's Settings.</p>
+    <div class="card">
+      <h2>Name your Walter</h2>
+      <input id="wname" placeholder="Walter" maxlength="40">
+      <p>He'll answer to this name (and to "Walter").</p>
+      <h2>Your household</h2>
+      <input id="house" placeholder="e.g. The Smiths" maxlength="60">
+      <p>Kept only on Walter, never sent anywhere.</p>
+      <button data-do="welcome">Next</button>
+    </div>
+  </section>
+
+  <section class="step" data-step="network">
+    <h1>Network, time and place</h1>
+    <div class="card">
+      <h2>Internet</h2><div class="msg" id="netMsg">Checking…</div>
+      <button class="ghost" id="netAgain">Check again</button>
+    </div>
+    <div class="card">
+      <h2>Where is Walter?</h2>
+      <p>For weather and the clock. Search by town; only the town name goes to Open-Meteo's search, nothing about you.</p>
+      <input id="city" placeholder="Town or city">
+      <div id="cities"></div>
+      <div class="msg" id="placeMsg"></div>
+      <button data-do="network">Next</button>
+    </div>
+  </section>
+
+  <section class="step" data-step="audio">
+    <h1>Mic and speaker</h1>
+    <div class="card">
+      <h2>1. Speaker</h2>
+      <select id="sink"></select>
+      <input id="vol" type="range" min="10" max="120" value="70">
+      <button id="playTest">Play test sound</button>
+      <label class="check"><input id="heardIt" type="checkbox"><span>I heard the sound</span></label>
+    </div>
+    <div class="card">
+      <h2>2. Microphone</h2>
+      <select id="source"></select>
+      <p>Tap, then say "Hey Walter" from where you'll usually talk.</p>
+      <button id="micTest">Test the mic (3 seconds)</button>
+      <div class="meter"><div id="micBar"></div></div>
+      <div class="msg" id="micMsg"></div>
+    </div>
+    <button data-do="audio">Next</button>
+  </section>
+
+  <section class="step" data-step="claude">
+    <h1>Connect Walter's brain</h1>
+    <p class="sub">Walter uses your own Claude account or API key; Walter never sees your Claude password or login code.</p>
+    <div class="card">
+      <h2>Sign in with Claude</h2>
+      <p>Plug a keyboard into Walter, then tap. Claude's own sign-in window opens on Walter's screen; sign in there. If it asks for a code, type it there, not here.</p>
+      <button id="signin">Open Claude sign-in on Walter's screen</button>
+      <div class="msg" id="signinMsg"></div>
+    </div>
+    <div class="card">
+      <h2>Or your own Anthropic API key</h2>
+      <p>From console.anthropic.com (starts with sk-ant-api). Billed to your account; stored only on Walter.</p>
+      <input id="apikey" type="password" placeholder="sk-ant-api…" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <button class="ghost" id="savekey">Save my key</button>
+      <div class="msg" id="keyMsg"></div>
+    </div>
+    <button data-do="claude">Verify</button>
+    <div class="msg" id="claudeMsg"></div>
+  </section>
+
+  <section class="step" data-step="privacy">
+    <h1>Privacy choices</h1>
+    <p class="sub">Everything here is off unless you switch it on. Change it any time.</p>
+    <div class="card">
+      <label class="check"><input type="checkbox" id="p_camera"><span>Camera
+        <small>Lets Walter notice when someone's in the room (wakes up, says hi). Nothing is recorded or sent.</small></span></label>
+      <label class="check"><input type="checkbox" id="p_cloud_speech"><span>Cloud speech
+        <small>A more natural voice and better hearing via OpenAI (needs your own OpenAI key). Off = all speech stays on Walter.</small></span></label>
+      <label class="check"><input type="checkbox" id="p_recognise_faces"><span>Recognise faces
+        <small>Only people who enrol themselves. Stored as numbers on Walter, never photos.</small></span></label>
+      <label class="check"><input type="checkbox" id="p_recognise_voices"><span>Recognise voices
+        <small>Same, for voices.</small></span></label>
+      <label class="check"><input type="checkbox" id="p_full_admin"><span>Full admin rights for Walter
+        <small>Walter could install software and change the system himself. Risky: a bad web page or email could trick him. Only on a laptop used just for Walter.</small></span></label>
+      <h2 style="margin-top:12px">How much can Walter's helpers change?</h2>
+      <select id="p_permission_mode">
+        <option value="acceptEdits">Edit his own files, ask before other commands (recommended)</option>
+        <option value="default">Ask before every change</option>
+        <option value="bypassPermissions">Never ask (experts only)</option>
+      </select>
+      <button data-do="privacy">Save</button>
+    </div>
+  </section>
+
+  <section class="step" data-step="extras">
+    <h1>Extras (optional)</h1>
+    <div class="card">
+      <label class="check"><input type="checkbox" id="x_google"><span>Connect a Google calendar
+        <small>A QR code appears on Walter; you approve on your phone. Read-only email.</small></span></label>
+      <h2>Podcasts to follow</h2><input id="x_pods" placeholder="Show names, separated by commas">
+      <h2>Teams you follow</h2><input id="x_teams" placeholder="e.g. Packers, Yankees">
+      <label class="check"><input type="checkbox" id="x_verse"><span>A verse of the day on the dashboard</span></label>
+      <h2>Home Assistant (optional)</h2><input id="x_ha" placeholder="e.g. http://homeassistant.local:8123" autocapitalize="off" spellcheck="false">
+      <button data-do="extras">Next</button>
+    </div>
+  </section>
+
+  <section class="step" data-step="cloudlink">
+    <h1>Cloud Link (optional)</h1>
+    <div class="card">
+      <p>Use the Walter app away from home through a private link just for your household. During the beta we switch it on for you; nothing is set up until then.</p>
+      <button id="cloudYes">Yes, request Cloud Link</button>
+      <div class="msg" id="cloudMsg"></div>
+    </div>
+  </section>
+
+  <section class="step" data-step="pair">
+    <h1>Pair this phone</h1>
+    <div class="card">
+      <p>Get the Walter app on this phone: chat, your list, reminders and notifications.</p>
+      <button id="pairGo">Show a pairing code</button>
+      <div class="code" id="pairCode"></div>
+      <p id="pairHint"></p>
+      <button class="ghost" data-do="pair">I've paired</button>
+    </div>
+  </section>
+
+  <section class="step" data-step="hello">
+    <h1>Say hello! 🎉</h1>
+    <div class="card"><p>Look at Walter and say “Hey Walter, hello”. Some things to try:</p><ul id="tour"></ul>
+      <button data-do="hello">Finish</button></div>
+    <div class="msg ok" id="doneMsg"></div>
+  </section>
+
+  <button class="ghost" id="skip">Skip this step</button>
+</main>
+<script>
+const K = "{{KEY}}";
+const $ = (id) => document.getElementById(id);
+let S = null, place = null;
+// Opened from the app's Settings (no key): use the paired app's device token.
+const TOKEN = (() => { if (K) return ""; try { return JSON.parse(localStorage.getItem("walter.token") || '""'); } catch (e) { return ""; } })();
+const HDR = TOKEN ? { "Content-Type": "application/json", "Authorization": "Bearer " + TOKEN } : { "Content-Type": "application/json" };
+async function api(action, body = {}) {
+  const r = await fetch("/api/firstrun/" + action, { method: "POST", headers: HDR,
+                                                     body: JSON.stringify({ k: K, ...body }) });
+  if (!r.ok) throw new Error(r.status === 403 ? "This page has expired. Scan the code on Walter again." : "Error " + r.status);
+  const d = await r.json();
+  if (d.steps) render(d);
+  return d;
+}
+function say(el, text, cls) { el.textContent = text || ""; el.className = "msg " + (cls || ""); }
+function render(d) {
+  S = d;
+  $("dots").innerHTML = d.steps.map((s) => `<button class="dot ${s.status} ${s.id === d.current ? "cur" : ""}" data-goto="${s.id}" title="${s.title}">${s.n}</button>`).join("");
+  document.querySelectorAll(".step").forEach((el) => el.style.display = el.dataset.step === d.current ? "block" : "none");
+  $("skip").style.display = d.current === "hello" ? "none" : "block";
+  if (d.tour) $("tour").innerHTML = d.tour.map((t) => `<li>${t}</li>`).join("");
+  if (d.current === "network") netCheck();
+  if (d.current === "audio") loadDevices();
+}
+document.addEventListener("click", async (e) => {
+  const g = e.target.closest("[data-goto]");
+  if (g) return api("goto", { step: g.dataset.goto });
+  const b = e.target.closest("[data-do]");
+  if (!b) return;
+  const step = b.dataset.do;
+  b.disabled = true;
+  try {
+    const r = await api(step, { data: collect(step) });
+    if (!r.ok && r.message) alert(r.message);
+    if (step === "hello" && r.ok) say($("doneMsg"), "All set! Walter is yours.", "ok");
+  } catch (err) { alert(err.message); } finally { b.disabled = false; }
+});
+function collect(step) {
+  if (step === "welcome") return { walter_name: $("wname").value, household: $("house").value };
+  if (step === "network") return { tz: Intl.DateTimeFormat().resolvedOptions().timeZone, place };
+  if (step === "audio") return { speaker_ok: $("heardIt").checked };
+  if (step === "privacy") {
+    const o = {};
+    ["camera", "cloud_speech", "recognise_faces", "recognise_voices", "full_admin"].forEach((k) => o[k] = $("p_" + k).checked);
+    o.permission_mode = $("p_permission_mode").value;
+    return o;
+  }
+  if (step === "extras") {
+    const list = (s) => s.split(",").map((x) => x.trim()).filter(Boolean);
+    return { google: $("x_google").checked, podcasts: list($("x_pods").value), teams: list($("x_teams").value), verse: $("x_verse").checked, homeassistant_url: $("x_ha").value.trim() };
+  }
+  if (step === "pair") return { paired: true };
+  return {};
+}
+$("skip").onclick = () => api("skip", { step: S.current });
+
+let netBusy = false;
+async function netCheck() {
+  if (netBusy) return; netBusy = true;
+  try { const r = await api("netcheck"); say($("netMsg"), r.check.online ? "Connected" : "No internet yet. Check the Wi-Fi or cable.", r.check.online ? "ok" : "err"); }
+  catch (e) {} finally { netBusy = false; }
+}
+$("netAgain").onclick = netCheck;
+let cityT = 0;
+$("city").oninput = () => {
+  clearTimeout(cityT);
+  cityT = setTimeout(async () => {
+    const r = await fetch("/api/firstrun/geocode", { method: "POST", headers: HDR,
+      body: JSON.stringify({ k: K, data: { q: $("city").value } }) }).then((x) => x.json()).catch(() => ({}));
+    $("cities").innerHTML = "";
+    (r.results || []).forEach((c) => {
+      const b = document.createElement("button"); b.className = "pick"; b.textContent = c.name;
+      b.onclick = () => { place = c; $("cities").innerHTML = ""; $("city").value = c.name; say($("placeMsg"), "Got it: " + c.name, "ok"); };
+      $("cities").appendChild(b);
+    });
+  }, 400);
+};
+
+let devLoaded = false;
+async function loadDevices() {
+  if (devLoaded) return; devLoaded = true;
+  const r = await api("devices").catch(() => ({}));
+  const fill = (sel, items) => { sel.innerHTML = `<option value="">Default</option>` + (items || []).map((d) => `<option value="${d.name}">${d.label}</option>`).join(""); };
+  fill($("sink"), r.sinks); fill($("source"), r.sources);
+}
+$("playTest").onclick = () => api("speaker", { data: { sink: $("sink").value, volume: +$("vol").value } });
+$("micTest").onclick = async () => {
+  $("micTest").disabled = true; say($("micMsg"), "Listening… say “Hey Walter”.");
+  try {
+    const r = await api("mic", { data: { source: $("source").value } });
+    $("micBar").style.width = (r.level || 0) + "%";
+    say($("micMsg"), r.message, r.passed ? "ok" : "err");
+  } finally { $("micTest").disabled = false; }
+};
+
+$("signin").onclick = async () => { const r = await api("signin").catch((e) => ({ message: e.message })); say($("signinMsg"), r.message, r.ok ? "ok" : "err"); };
+$("savekey").onclick = async () => {
+  const r = await api("apikey", { data: { key: $("apikey").value.trim() } }).catch((e) => ({ message: e.message }));
+  $("apikey").value = ""; say($("keyMsg"), r.message, r.ok ? "ok" : "err");
+};
+$("cloudYes").onclick = async () => { const r = await api("cloudlink", { data: { want: true } }); say($("cloudMsg"), r.message, r.ok ? "ok" : "err"); };
+$("pairGo").onclick = async () => {
+  const r = await api("paircode");
+  if (!r.ok) return say($("pairHint"), r.message, "err");
+  $("pairCode").textContent = r.code.slice(0, 3) + " " + r.code.slice(3);
+  $("pairHint").innerHTML = `<a href="${r.link}" style="color:#58c4ff">Open the Walter app on this phone</a> (or scan the code on Walter).`;
+};
+
+api("state");
+setInterval(() => { if (document.visibilityState === "visible") fetch("/api/firstrun/state", { method: "POST", headers: HDR, body: JSON.stringify({ k: K }) }).then((r) => r.json()).then((d) => { if (d.current && S && d.current !== S.current) render(d); }).catch(() => {}); }, 5000);
+</script>
+</body>
+</html>

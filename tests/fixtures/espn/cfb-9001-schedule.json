@@ -1,0 +1,635 @@
+{
+"team": {
+"id": "9001",
+"abbreviation": "NFD",
+"name": "Owls",
+"color": "2a6f3b",
+"record": {}
+},
+"events": [
+{
+"id": "401858430",
+"date": "2026-09-05T16:00Z",
+"shortName": "OHIO @ NFD",
+"competitions": [
+{
+"id": "401858430",
+"date": "2026-09-05T16:00Z",
+"timeValid": true,
+"status": {
+"clock": 0.0,
+"displayClock": "0:00",
+"period": 4,
+"type": {
+"id": "3",
+"name": "STATUS_FINAL",
+"state": "post",
+"completed": true,
+"description": "Final",
+"detail": "Final",
+"shortDetail": "Final"
+}
+},
+"competitors": [
+{
+"id": "9001",
+"homeAway": "home",
+"winner": true,
+"score": {
+"value": 49.0,
+"displayValue": "49"
+},
+"team": {
+"id": "9001",
+"abbreviation": "NFD"
+}
+},
+{
+"id": "195",
+"homeAway": "away",
+"winner": false,
+"score": {
+"value": 21.0,
+"displayValue": "21"
+},
+"team": {
+"id": "195",
+"abbreviation": "OHIO"
+}
+}
+]
+}
+]
+},
+{
+"id": "401858441",
+"date": "2026-09-12T23:00Z",
+"shortName": "BGSU @ NFD",
+"competitions": [
+{
+"id": "401858441",
+"date": "2026-09-12T23:00Z",
+"timeValid": true,
+"status": {
+"clock": 0.0,
+"displayClock": "0:00",
+"period": 4,
+"type": {
+"id": "3",
+"name": "STATUS_FINAL",
+"state": "post",
+"completed": true,
+"description": "Final",
+"detail": "Final",
+"shortDetail": "Final"
+}
+},
+"competitors": [
+{
+"id": "9001",
+"homeAway": "home",
+"winner": true,
+"score": {
+"value": 56.0,
+"displayValue": "56"
+},
+"team": {
+"id": "9001",
+"abbreviation": "NFD"
+}
+},
+{
+"id": "189",
+"homeAway": "away",
+"winner": false,
+"score": {
+"value": 7.0,
+"displayValue": "7"
+},
+"team": {
+"id": "189",
+"abbreviation": "BGSU"
+}
+}
+]
+}
+]
+},
+{
+"id": "401858452",
+"date": "2026-09-19T23:15Z",
+"shortName": "UND @ NFD",
+"competitions": [
+{
+"id": "401858452",
+"date": "2026-09-19T23:15Z",
+"timeValid": true,
+"status": {
+"clock": 0.0,
+"displayClock": "0:00",
+"period": 4,
+"type": {
+"id": "3",
+"name": "STATUS_FINAL",
+"state": "post",
+"completed": true,
+"description": "Final",
+"detail": "Final",
+"shortDetail": "Final"
+}
+},
+"competitors": [
+{
+"id": "9001",
+"homeAway": "home",
+"winner": true,
+"score": {
+"value": 34.0,
+"displayValue": "34"
+},
+"team": {
+"id": "9001",
+"abbreviation": "NFD"
+}
+},
+{
+"id": "155",
+"homeAway": "away",
+"winner": false,
+"score": {
+"value": 7.0,
+"displayValue": "7"
+},
+"team": {
+"id": "155",
+"abbreviation": "UND"
+}
+}
+]
+}
+]
+},
+{
+"id": "401858464",
+"date": "2026-09-26T21:00Z",
+"shortName": "NFD @ MSU",
+"competitions": [
+{
+"id": "401858464",
+"date": "2026-09-26T21:00Z",
+"timeValid": true,
+"status": {
+"clock": 0.0,
+"displayClock": "0:00",
+"period": 4,
+"type": {
+"id": "3",
+"name": "STATUS_FINAL",
+"state": "post",
+"completed": true,
+"description": "Final",
+"detail": "Final",
+"shortDetail": "Final"
+}
+},
+"competitors": [
+{
+"id": "127",
+"homeAway": "home",
+"winner": false,
+"score": {
+"value": 13.0,
+"displayValue": "13"
+},
+"team": {
+"id": "127",
+"abbreviation": "MSU"
+}
+},
+{
+"id": "9001",
+"homeAway": "away",
+"winner": true,
+"score": {
+"value": 31.0,
+"displayValue": "31"
+},
+"team": {
+"id": "9001",
+"abbreviation": "NFD"
+}
+}
+]
+}
+]
+},
+{
+"id": "401858475",
+"date": "2026-10-03T20:00Z",
+"shortName": "MD @ NFD",
+"competitions": [
+{
+"id": "401858475",
+"date": "2026-10-03T20:00Z",
+"timeValid": true,
+"status": {
+"clock": 0.0,
+"displayClock": "0:00",
+"period": 4,
+"type": {
+"id": "3",
+"name": "STATUS_FINAL",
+"state": "post",
+"completed": true,
+"description": "Final",
+"detail": "Final",
+"shortDetail": "Final"
+}
+},
+"competitors": [
+{
+"id": "9001",
+"homeAway": "home",
+"winner": true,
+"score": {
+"value": 48.0,
+"displayValue": "48"
+},
+"team": {
+"id": "9001",
+"abbreviation": "NFD"
+}
+},
+{
+"id": "120",
+"homeAway": "away",
+"winner": false,
+"score": {
+"value": 23.0,
+"displayValue": "23"
+},
+"team": {
+"id": "120",
+"abbreviation": "MD"
+}
+}
+]
+}
+]
+},
+{
+"id": "401858481",
+"date": "2026-10-10T16:00Z",
+"shortName": "IU @ NFD",
+"competitions": [
+{
+"id": "401858481",
+"date": "2026-10-10T16:00Z",
+"timeValid": true,
+"status": {
+"clock": 0.0,
+"displayClock": "0:00",
+"period": 4,
+"type": {
+"id": "3",
+"name": "STATUS_FINAL",
+"state": "post",
+"completed": true,
+"description": "Final",
+"detail": "Final",
+"shortDetail": "Final"
+}
+},
+"competitors": [
+{
+"id": "9001",
+"homeAway": "home",
+"winner": false,
+"score": {
+"value": 17.0,
+"displayValue": "17"
+},
+"team": {
+"id": "9001",
+"abbreviation": "NFD"
+}
+},
+{
+"id": "84",
+"homeAway": "away",
+"winner": true,
+"score": {
+"value": 20.0,
+"displayValue": "20"
+},
+"team": {
+"id": "84",
+"abbreviation": "IU"
+}
+}
+]
+}
+]
+},
+{
+"id": "401858492",
+"date": "2026-10-18T03:00Z",
+"shortName": "NFD @ ORE",
+"competitions": [
+{
+"id": "401858492",
+"date": "2026-10-18T03:00Z",
+"timeValid": true,
+"status": {
+"clock": 0.0,
+"displayClock": "0:00",
+"period": 4,
+"type": {
+"id": "3",
+"name": "STATUS_FINAL",
+"state": "post",
+"completed": true,
+"description": "Final",
+"detail": "Final",
+"shortDetail": "Final"
+}
+},
+"competitors": [
+{
+"id": "2483",
+"homeAway": "home",
+"winner": true,
+"score": {
+"value": 17.0,
+"displayValue": "17"
+},
+"team": {
+"id": "2483",
+"abbreviation": "ORE"
+}
+},
+{
+"id": "9001",
+"homeAway": "away",
+"winner": false,
+"score": {
+"value": 14.0,
+"displayValue": "14"
+},
+"team": {
+"id": "9001",
+"abbreviation": "NFD"
+}
+}
+]
+}
+]
+},
+{
+"id": "401858504",
+"date": "2026-11-01T00:00Z",
+"shortName": "WASH @ NFD",
+"competitions": [
+{
+"id": "401858504",
+"date": "2026-11-01T00:00Z",
+"timeValid": true,
+"status": {
+"clock": 0.0,
+"displayClock": "0:00",
+"period": 4,
+"type": {
+"id": "3",
+"name": "STATUS_FINAL",
+"state": "post",
+"completed": true,
+"description": "Final",
+"detail": "Final",
+"shortDetail": "Final"
+}
+},
+"competitors": [
+{
+"id": "9001",
+"homeAway": "home",
+"winner": false,
+"score": {
+"value": 10.0,
+"displayValue": "10"
+},
+"team": {
+"id": "9001",
+"abbreviation": "NFD"
+}
+},
+{
+"id": "264",
+"homeAway": "away",
+"winner": true,
+"score": {
+"value": 17.0,
+"displayValue": "17"
+},
+"team": {
+"id": "264",
+"abbreviation": "WASH"
+}
+}
+]
+}
+]
+},
+{
+"id": "401858510",
+"date": "2026-11-07T01:00Z",
+"shortName": "NFD @ ILL",
+"competitions": [
+{
+"id": "401858510",
+"date": "2026-11-07T01:00Z",
+"timeValid": true,
+"status": {
+"clock": 0.0,
+"displayClock": "0:00",
+"period": 0,
+"type": {
+"id": "1",
+"name": "STATUS_SCHEDULED",
+"state": "pre",
+"completed": false,
+"description": "Scheduled",
+"detail": "Fri, November 6th at 8:00 PM EST",
+"shortDetail": "11/6 - 8:00 PM EST"
+}
+},
+"competitors": [
+{
+"id": "356",
+"homeAway": "home",
+"winner": null,
+"score": null,
+"team": {
+"id": "356",
+"abbreviation": "ILL"
+}
+},
+{
+"id": "9001",
+"homeAway": "away",
+"winner": null,
+"score": null,
+"team": {
+"id": "9001",
+"abbreviation": "NFD"
+}
+}
+]
+}
+]
+},
+{
+"id": "401858525",
+"date": "2026-11-14T17:30Z",
+"shortName": "NFD @ RUTG",
+"competitions": [
+{
+"id": "401858525",
+"date": "2026-11-14T17:30Z",
+"timeValid": true,
+"status": {
+"clock": 0.0,
+"displayClock": "0:00",
+"period": 0,
+"type": {
+"id": "1",
+"name": "STATUS_SCHEDULED",
+"state": "pre",
+"completed": false,
+"description": "Scheduled",
+"detail": "Sat, November 14th at 12:30 PM EST",
+"shortDetail": "11/14 - 12:30 PM EST"
+}
+},
+"competitors": [
+{
+"id": "164",
+"homeAway": "home",
+"winner": null,
+"score": null,
+"team": {
+"id": "164",
+"abbreviation": "RUTG"
+}
+},
+{
+"id": "9001",
+"homeAway": "away",
+"winner": null,
+"score": null,
+"team": {
+"id": "9001",
+"abbreviation": "NFD"
+}
+}
+]
+}
+]
+},
+{
+"id": "401858531",
+"date": "2026-11-21T05:00Z",
+"shortName": "OSU @ NFD",
+"competitions": [
+{
+"id": "401858531",
+"date": "2026-11-21T05:00Z",
+"timeValid": false,
+"status": {
+"clock": 0.0,
+"displayClock": "0:00",
+"period": 0,
+"type": {
+"id": "1",
+"name": "STATUS_SCHEDULED",
+"state": "pre",
+"completed": false,
+"description": "Scheduled",
+"detail": "11/21 - TBD",
+"shortDetail": "TBD"
+}
+},
+"competitors": [
+{
+"id": "9001",
+"homeAway": "home",
+"winner": null,
+"score": null,
+"team": {
+"id": "9001",
+"abbreviation": "NFD"
+}
+},
+{
+"id": "194",
+"homeAway": "away",
+"winner": null,
+"score": null,
+"team": {
+"id": "194",
+"abbreviation": "OSU"
+}
+}
+]
+}
+]
+},
+{
+"id": "401858536",
+"date": "2026-11-27T17:00Z",
+"shortName": "NFD @ IOWA",
+"competitions": [
+{
+"id": "401858536",
+"date": "2026-11-27T17:00Z",
+"timeValid": true,
+"status": {
+"clock": 0.0,
+"displayClock": "0:00",
+"period": 0,
+"type": {
+"id": "1",
+"name": "STATUS_SCHEDULED",
+"state": "pre",
+"completed": false,
+"description": "Scheduled",
+"detail": "Fri, November 27th at 12:00 PM EST",
+"shortDetail": "11/27 - 12:00 PM EST"
+}
+},
+"competitors": [
+{
+"id": "2294",
+"homeAway": "home",
+"winner": null,
+"score": null,
+"team": {
+"id": "2294",
+"abbreviation": "IOWA"
+}
+},
+{
+"id": "9001",
+"homeAway": "away",
+"winner": null,
+"score": null,
+"team": {
+"id": "9001",
+"abbreviation": "NFD"
+}
+}
+]
+}
+]
+}
+]
+}

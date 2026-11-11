@@ -1,0 +1,21 @@
+[Unit]
+Description=Walter first-boot setup (installs Walter's software, then reboots)
+After=network-online.target
+Wants=network-online.target
+Before=getty@tty1.service
+ConditionPathExists=!/var/lib/walter/installed
+
+[Service]
+Type=oneshot
+ExecStart=/opt/walter-src/deploy/firstboot.sh
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TimeoutStartSec=infinity
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

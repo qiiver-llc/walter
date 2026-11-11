@@ -1,0 +1,11 @@
+[Unit]
+Description=Walter: live worker status for the face (face/dashboard-workers.json)
+
+[Service]
+ExecStart=@REPO@/bin/walter-workers-live
+Restart=always
+RestartSec=5
+Nice=10
+
+[Install]
+WantedBy=default.target

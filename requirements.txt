@@ -1,0 +1,12 @@
+aiohttp>=3.9
+numpy>=1.24
+sounddevice>=0.4.6
+webrtcvad-wheels>=2.0.11
+faster-whisper>=1.0
+piper-tts>=1.3
+qrcode>=7.4
+opencv-python-headless>=4.8,<5   # presence camera (5.x dropped the Haar face cascade)
+sherpa-onnx>=1.10       # speaker embeddings for voice recognition (people.py)
+audiotsm>=0.1.2
+pywebpush>=2.0         # Web Push to the companion app (reminders reach a closed app); optional
+zeroconf>=0.130        # mDNS: faces find the brain (face_server.advertise, docs/FACES.md); optional

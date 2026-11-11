@@ -1,0 +1,7 @@
+[Unit]
+Description=Walter: live scores for the dashboard sports row (no-op unless a followed game is on)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/walter/bin/walter-dashboard sports --live-only

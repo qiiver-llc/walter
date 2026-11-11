@@ -1,0 +1,2413 @@
+#!/usr/bin/env python3
+"""walterctl: control Walter's body and life from the shell.
+
+Walter uses this himself (it's on his PATH), and you can use it over SSH.
+
+  walterctl say "[happy] Hello!"        speak right now (tags allowed)
+  walterctl ask "what's the weather?"   send Walter a message, as if you said it
+  walterctl face happy                  show an emotion
+  walterctl faces                       every face (wall, kitchen tablet, laptop...): room, kind, online
+  walterctl hands status|enable|disable|stop|start|do FACE ACTION ...|approve ID|deny ID|log
+                                        laptop computer use, approvals, kill switch (walterctl hands help)
+  walterctl face pair [NAME] | rename OLD NEW | room NAME ROOM | kind NAME KIND | forget NAME
+                                        add a face (6-digit code + QR on the wall) and name it;
+  walterctl face workspace NAME WS|none  its default workspace (docs/FACES.md)
+  walterctl face send NAME text "words" | card "Title" "Body" [SECS] | media | reminder ID | stop
+                                        handoff: say/show/play something on another face
+  walterctl display ... --face NAME     display settings (theme, text-scale, layout...) of one face
+  walterctl action bounce               do a body action (bounce, wiggle, nod, look:left ...)
+  walterctl remind 20m "check the oven" tell the person something later
+                                        (times: 20m, 1h30m, 90s, 18:30, 2026-11-02T09:00)
+  walterctl later 2h "check the build and report"
+                                        do something later (Walter carries it out)
+  walterctl every weekdays 07:30 "morning briefing: weather, calendar, news"
+                                        recurring routine. days: daily, weekdays,
+                                        weekends, or a list like mon,wed,fri
+  walterctl reminders                   list reminders and routines
+  walterctl cancel 3                    cancel reminder/routine #3
+  walterctl pause 3 | resume 3          pause / resume routine #3 (stays listed, doesn't run)
+  walterctl task [--workspace NAME] [--on NAME|best] "title" "full instructions"
+  walterctl cluster status|peers|pair [--cancel]|join URL CODE [--url MY_URL]|leave|promote NAME|
+            remove NAME|sync|conflicts|jobs|assign NAME WS|none|discover
+                                        several full installs as one brain (docs/CLUSTER.md)
+                                        run a long job in the background; Walter
+                                        hears the result when it's done
+  walterctl tasks                       list background tasks
+  walterctl tasks --live [--json]       what each worker is doing right now (last step, files edited)
+  walterctl tasks --priority            CPU/IO priority of running workers vs Walter's own voice service
+  walterctl diagnostics [--out FILE] [--json]
+                                        redacted technical bundle for beta feedback (preview;
+                                        nothing is sent; the app's Feedback page can send it)
+  walterctl cancel-task 2               stop background task #2
+  walterctl sleep                                 go to sleep now: dashboard mode, mic muted (Z key on the face; Space wakes)
+  walterctl volume [up|down|set N|mute|unmute]   speaker volume (also Up/Down arrow keys on the face)
+  walterctl stop                        stop talking / thinking
+  walterctl mute [on|off|toggle]        mute the microphone (Space bar on the face
+                                        does the same); walterctl unmute to undo
+  walterctl podcast follow|list|latest|play|pause|resume|stop|skip|back|speed|status
+                                        podcasts from public RSS (walterctl podcast help)
+  walterctl ha status|connect|list|areas|state|on|off|brightness|temp|scene|alias ...
+                                        Home Assistant bridge, optional (walterctl ha help)
+  walterctl radio play "country"|"WNYC"|NAME, stop|pause|resume|volume|status|list|favorites
+                                        live internet radio (walterctl radio help)
+  walterctl spotify status|enable|disable  Spotify Connect speaker "Walter" (Premium; docs/MUSIC.md)
+  walterctl media youtube play "words"|url URL, pause|resume|skip|back|volume|speed|next|status|stop
+                                        YouTube in the wall browser (walterctl media help)
+  walterctl youtube follow|unfollow|list|latest|play|upnext "channel"
+                                        follow YouTube channels (public RSS, no login)
+  walterctl school query|scan FILE|list|accept all|N,N --yes|dismiss N|clear
+                                        school/sports/church email -> PROPOSED list +
+                                        calendar items; read-only, adds only after a yes
+  walterctl captions [on|off]           show subtitles under Walter
+  walterctl camera [on|off]             presence camera on/off until restart
+                                        (permanently: [senses] camera in config.toml)
+  walterctl camera debug [on|off]       log which signal (face/person/motion) fires
+                                        and why the camera sleeps/verifies/watches
+  walterctl enroll face NAME            learn someone's face (~15 s, instructions on
+                                        screen; they must agree first). Keeps only
+                                        face embeddings, never photos
+  walterctl enroll voice NAME           learn someone's voice: they read ~5 sentences
+                                        shown on the canvas (~30 s). Embeddings only
+  walterctl people                      who is enrolled and what's stored
+  walterctl forget NAME [face|voice]    delete someone's face and/or voice embeddings
+  walterctl reload-face                 reload the face page
+  walterctl brain [fast|deep|auto|status]
+                                        which model I think with: auto picks per
+                                        turn (fast for chat, deep for hard turns);
+                                        fast/deep force one until "auto" again
+  walterctl voice [local|openai|demo|demo-local|status]
+                                        my voice: local piper, or OpenAI text-to-speech
+                                        (falls back to piper per sentence on any error);
+                                        demo = same sentence local, then OpenAI
+                                        demo-local = piper, then Kokoro voices (trial)
+  walterctl ears [local|openai|status]  my transcription: local whisper, or OpenAI for
+                                        finished turns meant for me (partials stay local)
+  walterctl speech status               both switches, key present?, today's usage, caps,
+                                        approximate cost
+  walterctl mode [classic|realtime|status]
+                                        conversation mode: classic (my brain + voice), or
+                                        realtime (OpenAI Realtime voice front end that hands
+                                        real work to my brain; falls back to classic on errors
+                                        or caps). Live, remembered in speech.json
+  walterctl dash add "text" [--section tasks|shopping|notes|ideas] [--due friday]
+                                        the person's list on the sleep dashboard; also
+                                        dash list | done N | undone N | remove N |
+                                        set-events FILE.json | refresh | show [SECONDS]
+                                        (same as bin/walter-dashboard)
+  walterctl workspace list|current|switch NAME|add NAME|set NAME key value|show [NAME] [--face ID]
+                                        workspaces (Home, Acme, Clinic...): repos, notes,
+                                        backlog, privacy; current one is per face (docs/WORKSPACES.md)
+  walterctl loop [status|focus "X"|next "X"|block "X"|unblock [N|words|all]|win "X"|tick|clear] [--json]
+                                        my autonomy loop: current focus, next step, blocked-on-you
+                                        items, today's wins (~/.walter/loop.json + the face's loop chip)
+  walterctl focus start 25m "network app"
+                                        Focus mode: a time box (ring round me, Now/Next
+                                        strip, 5-minute warning, check-in at the end);
+                                        also focus status | extend [10m] | done | park |
+                                        stop | next | strip on|box|off | log
+  walterctl review [do ID [WHEN] | defer ID WHEN | delegate ID WHO | drop ID]
+                                        the inbox review (GTD): no args lists the inbox
+                                        (things said in passing) for me to read out
+  walterctl google connect [--minutes N]
+                                        connect Google accounts from the owner's phone: QR on the
+                                        wall, he picks the account and taps Allow (runs in the
+                                        background; I get a note when it's done). Also
+                                        google accounts (who's connected) | google client
+                                        (QR page to drop the OAuth client file)
+  walterctl away [list|clear|seen|add "title" "body"]
+  walterctl chat log [N]                the last N (20) messages of the full chat history (app Chat tab)
+  walterctl chat search WORDS           find messages containing WORDS (newest first)
+                                        "While you were away": what I couldn't say out loud
+                                        (muted, asleep, empty room); * = not seen yet
+  walterctl pair [--cancel]             pair a phone/computer with the companion app: shows a
+                                        6-digit code + QR on my face for 5 minutes
+  walterctl devices                     list paired companion-app devices
+  walterctl revoke NAME|all             unpair a device (its app stops working at once)
+  walterctl revoke-all                  unpair EVERY device (lost phone, beta reset)
+  walterctl devices idle-expiry DAYS    devices unused DAYS days must pair again (0 = never)
+  walterctl security status [--json]    doctor: brain permissions, admin, camera/cloud, tunnel,
+                                        paired devices, file permissions of secrets
+  walterctl security fix-perms          make secrets/devices/state files 600 and folders 700
+  walterctl security preset             print the recommended beta [brain] settings
+  walterctl wall [--json]               what the wall face itself says it shows (mode, build,
+                                        theme, layout, screen, workspace; stale after 15 s)
+  walterctl app-bump [VERSION]          after editing ~/walter/app: bump app/VERSION and tell
+                                        open apps "update available"
+  walterctl config reload               re-read ~/.walter/config.toml and apply it LIVE (no
+                                        restart): [voice] [speech] [ears] [life] [senses]
+                                        [dashboard] [app]; says which keys still need a restart
+  walterctl config get [SECTION[.KEY]]  what's live right now (and hot vs restart keys)
+  walterctl config set SECTION.KEY VALUE
+                                        edit config.toml (comments kept) and reload, e.g.
+                                        walterctl config set speech.tts_pitch 0.9
+  walterctl display portrait|portrait-flipped|landscape|rotate 0|90|180|270|status
+                                        turn the wall screen (panel mounted sideways): saved as
+                                        WALTER_ROTATE in ~/.walter/kiosk.env, applied at the next
+                                        kiosk start (reboot). Needs wlr-randr. The face lays itself
+                                        out for portrait whenever the screen is taller than wide.
+  walterctl display rotate portrait|landscape|flip|portrait-flipped|landscape-flipped|status
+                                        turn the screen NOW (wlr-randr) + save it
+  walterctl display css-rotate 90|270|0  (or: display portrait|portrait-flipped|landscape --css)
+                                        software rotation, no wlr-randr/sudo/restart: the face turns
+                                        itself within ~2 s (90 = clockwise, 270 = counter-clockwise,
+                                        0 = off). Saved in face/display.json. Don't combine with a
+                                        kiosk rotation, or it turns twice.
+  walterctl display theme list|NAME|auto|next|random
+                                        how my face and boards look: midnight (default, the
+                                        original), light, cream, fall, spring, summer, winter,
+                                        sunset, ocean, forest. auto = by season, midnight at
+                                        night (10 PM-6 AM). Live within ~2 s.
+  walterctl display calendar chips|counts|toggle|status
+                                        month calendar style: chips (default, every event) or
+                                        counts (one coloured tile per calendar with a count in
+                                        the weeks that aren't expanded). Live within ~2 s.
+  walterctl display text-scale 0.8|status
+                                        size of all text on the face and dashboard (0.5-1.5;
+                                        default 0.8; 1 = the original size). Eyes, QR codes and
+                                        buttons keep their size. Live within ~2 s.
+  walterctl display conversation on|off|view chat|default|build|clear|turns N|window N|hold N|status
+                                        conversation mode: after a real back-and-forth (turns, default
+                                        3 answered exchanges, each within window s (45) of my last
+                                        reply) the portrait board fades out and I grow centred with
+                                        big captions; it comes back hold s (8) after the talk ends.
+                                        One quick Q&A leaves the board alone. Live within ~3 s.
+  walterctl display build auto|on|off|status
+                                        the build view in conversation mode: auto (default) = only
+                                        when building (workers running or just finished AND build
+                                        talk, or the owner says "build mode": then STICKY until he says
+                                        "done building" / presses Esc / off|auto); on = sticky build
+                                        mode (stays until he exits); off = never.
+  walterctl display build focus N|diff|plan|scroll down|up
+                                        the deep view: focus worker N (0 = auto), show the diff or
+                                        the plan, scroll the diff. Voice works too ("focus worker 2").
+  walterctl display build plan FILE|clear [--workspace ID] | zoom diff|tests|board|stream|graph|plan|projects|back |
+                    sound on|off | cheat [off] | phase plan|build
+                                        build mode v2 cockpit: the plan pane (redacted copy, big in
+                                        the planning phase, a checklist once the owner says "build it"),
+                                        zoom one panel, sound cues, the voice cheat sheet.
+  walterctl test [--workspace ID|--repo PATH] [pytest args] [--quiet]
+                                        run pytest -q (+ node tests/*.test.js|mjs with no args) in this
+                                        repo (else the current workspace's, else ~/walter); the run is
+                                        kept live per workspace (~/.walter/last-test/<id>.json; the
+                                        Walter repo also last-test.json) for that project's cockpit.
+  walterctl test-summary < pytest-output
+                                        record the pytest summary line for the build view
+                                        (~/.walter/last-test.json).
+  walterctl display layout auto|compact|large|status
+                                        portrait layout: large = I sit small at the top and an
+                                        always-on info board fills the rest (clock, weather,
+                                        calendar, list, away feed, workers, usage, mic/voice);
+                                        compact = the old big-face portrait. auto (default) =
+                                        large on a big portrait screen (>= 1000x1700, e.g. the
+                                        rotated 1080x1920 monitor). Live within ~3 s.
+  walterctl new-session                 start a fresh conversation (memory files stay)
+  walterctl update                      install the latest tested version (signed release
+                                        channel if WALTER_UPDATE_URL is set, else GitHub)
+  walterctl update status               installed releases (current / previous)
+  walterctl update rollback [--force]   go back to the previous release and restart
+                                        (refuses while workers run unless --force)
+  walterctl present start|stop|status|rehearse
+                                        presentation mode: a ~60 s self-demo with demo data on
+                                        the wall, mic off while it runs (script:
+                                        ~/.walter/home/presentation.md; app: Settings)
+  walterctl status
+"""
+import datetime as dt
+import json
+import os
+import re
+import sys
+import time
+import urllib.request
+
+URL = os.environ.get("WALTER_URL", "http://127.0.0.1:8765")
+
+
+def call_raw(method, path, data=None, timeout=10):
+    """Like call(), but HTTP and connection errors are raised, not fatal."""
+    req = urllib.request.Request(
+        URL + path, method=method,
+        data=None if data is None else json.dumps(data).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read() or b"null")
+
+
+def call(method, path, data=None, timeout=10):
+    req = urllib.request.Request(
+        URL + path, method=method,
+        data=None if data is None else json.dumps(data).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read() or b"null")
+    except urllib.error.HTTPError as e:
+        sys.exit(f"walterctl: {e.code} {e.read().decode(errors='replace')}")
+    except urllib.error.URLError as e:
+        sys.exit(f"walterctl: can't reach Walter at {URL} ({e})")
+
+
+def parse_when(s: str) -> float:
+    s = s.strip().lower()
+    m = re.fullmatch(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?", s)
+    if m and any(m.groups()):
+        h, mi, se = (int(x or 0) for x in m.groups())
+        return time.time() + h * 3600 + mi * 60 + se
+    if re.fullmatch(r"\d+", s):  # bare number = minutes
+        return time.time() + int(s) * 60
+    m = re.fullmatch(r"(\d{1,2}):(\d{2})", s)
+    if m:
+        now = dt.datetime.now()
+        t = now.replace(hour=int(m[1]), minute=int(m[2]), second=0, microsecond=0)
+        if t <= now:
+            t += dt.timedelta(days=1)
+        return t.timestamp()
+    try:
+        return dt.datetime.fromisoformat(s).timestamp()
+    except ValueError:
+        sys.exit(f"walterctl: don't understand time '{s}' (try 20m, 1h30m, 18:30, 2026-11-02T09:00)")
+
+
+DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
+def parse_days(s: str) -> list:
+    s = s.lower()
+    named = {"daily": range(7), "everyday": range(7), "weekdays": range(5), "weekends": (5, 6)}
+    if s in named:
+        return list(named[s])
+    try:
+        return [DAYS.index(d.strip()[:3]) for d in s.split(",")]
+    except ValueError:
+        sys.exit(f"walterctl: don't understand days '{s}' (daily, weekdays, weekends, mon,wed,fri)")
+
+
+SPEECH_FILE = os.path.join(os.environ.get("WALTER_DATA", os.path.expanduser("~/.walter")), "speech.json")
+
+
+def print_reload(r):
+    if not r.get("ok", True):
+        sys.exit(f"walterctl: config not applied: {r.get('error')}")
+    for k, v in (r.get("set") or {}).items():
+        print(f"set {k} = {json.dumps(v)}")
+    print("applied live: " + (", ".join(r.get("applied") or []) or "nothing changed"))
+    for n in r.get("notes") or []:
+        print(f"  {n}")
+    if r.get("needs_restart"):
+        print("needs a restart: " + ", ".join(r["needs_restart"]))
+    for sw in r.get("switches") or []:
+        print(f"not applied: {sw}")
+    left = r.get("pending_restart") or {}
+    extra = [k for k in left if not any(x.startswith(k + " ") for x in r.get("needs_restart") or [])]
+    if extra:
+        print("still waiting for a restart: " + ", ".join(extra))
+
+
+def config_cmd(rest):
+    sub = rest[0] if rest else "get"
+    if sub == "reload":
+        print_reload(call("POST", "/api/config/reload"))
+    elif sub == "set":
+        if len(rest) != 3:
+            sys.exit("usage: walterctl config set SECTION.KEY VALUE")
+        try:
+            r = call("POST", "/api/config/set", {"key": rest[1], "value": rest[2]}, timeout=15)
+        except SystemExit as e:
+            if "can't reach Walter" not in str(e):
+                raise
+            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            from walter import live
+            from walter.config import DATA_DIR
+            sec, key, val = live.set_in_file(DATA_DIR / "config.toml", rest[1], rest[2])
+            print(f"set {sec}.{key} = {json.dumps(val)} in config.toml (Walter isn't running; "
+                  f"it applies when he starts)")
+            return
+        print_reload(r)
+    elif sub == "get":
+        snap = call("GET", "/api/config")
+        want = rest[1] if len(rest) > 1 else ""
+        sec, _, key = want.partition(".")
+        conf = snap["config"]
+        if sec and sec not in conf:
+            sys.exit(f"walterctl: [{sec}] isn't live-reloadable (always needs a restart)")
+        for s_name, vals in conf.items():
+            if sec and s_name != sec:
+                continue
+            hot = set(snap["hot"].get(s_name, []))
+            if key:
+                if key not in vals:
+                    sys.exit(f"walterctl: unknown key {s_name}.{key}")
+                tag = "live" if key in hot else "restart"
+                print(f"{s_name}.{key} = {json.dumps(vals[key])}   ({tag})")
+                return
+            print(f"[{s_name}]")
+            for k, v in vals.items():
+                print(f"  {k} = {json.dumps(v)}" + ("" if k in hot else "   (restart)"))
+        if not sec:
+            print("[server] and the rest of [brain]: restart only")
+            for k, v in snap.get("switches", {}).items():
+                print(f"{k}: starting default only; live switch: {v}")
+        if snap.get("pending_restart"):
+            print("waiting for a restart: " + ", ".join(snap["pending_restart"]))
+    else:
+        sys.exit("usage: walterctl config [get [SECTION[.KEY]] | set SECTION.KEY VALUE | reload]")
+
+
+def speech_offline(which, provider):
+    """Walter isn't running: just remember the choice for his next start."""
+    try:
+        with open(SPEECH_FILE) as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        d = {}
+    d[which] = provider
+    with open(SPEECH_FILE, "w") as f:
+        json.dump(d, f)
+    name = {"tts": "voice", "stt": "ears"}.get(which, which)
+    print(f"Walter isn't running; saved: {name} {provider} (applies when he starts)")
+
+
+def print_speech(r):
+    if not r.get("available", True):
+        print("speech switching not available in this Walter")
+        return
+    act = r.get("active", {})
+    print(f"voice: {r['tts']}{' (in use)' if act.get('tts') else ''}   "
+          f"[openai model {r.get('tts_model')}, voice {r.get('tts_voice')}]")
+    print(f"ears:  {r['stt']}{' (in use)' if act.get('stt') else ''}   "
+          f"[openai model {r.get('stt_model')}; live captions always local]")
+    print(f"OpenAI key: {'present' if r.get('key') else 'missing (skills/api-key-drop.py openai)'}")
+    t, m, c = r.get("today", {}), r.get("month", {}), r.get("caps", {})
+    print(f"today: {int(t.get('tts_chars', 0))} of {c.get('max_tts_chars_per_day')} voice characters, "
+          f"{t.get('stt_seconds', 0):.0f} of {c.get('max_stt_seconds_per_day'):g} ears seconds; "
+          f"approx ${r.get('approx_cost_today_usd', 0):.2f} (estimate from published prices)")
+    print(f"this month: {int(m.get('tts_chars', 0))} of {c.get('max_tts_chars_per_month')} characters, "
+          f"{m.get('stt_seconds', 0):.0f} of {c.get('max_stt_seconds_per_month'):g} seconds; "
+          f"approx ${r.get('approx_cost_month_usd', 0):.2f}")
+    if r.get("tts_room") not in (None, "ok"):
+        print(f"voice cap: {r['tts_room']} (using local)")
+    if r.get("stt_room") not in (None, "ok"):
+        print(f"ears cap: {r['stt_room']} (using local)")
+    rt = r.get("realtime") or {}
+    if rt:
+        sess = rt.get("session") or {}
+        print(f"mode:  {r.get('mode', 'classic')}   [realtime model {rt.get('model')}, voice {rt.get('voice')}"
+              f"{', session ' + sess['state'] if sess.get('state') else ''}"
+              f"{', streaming' if sess.get('streaming') else ''}]")
+        print(f"realtime today: {rt.get('minutes_today', 0):.1f} of {rt.get('max_min_per_day'):g} min, "
+              f"month {rt.get('minutes_month', 0):.1f} of {rt.get('max_min_per_month'):g} min; "
+              f"approx ${rt.get('approx_cost_today_usd', 0):.2f} today")
+        if r.get("mode") == "realtime" and (sess.get("problem") or rt.get("problem")):
+            print(f"realtime not usable right now: {sess.get('problem') or rt.get('problem')} (using classic)")
+        if sess.get("stats"):
+            st2 = sess["stats"]
+            print(f"realtime since start: {st2.get('sessions', 0)} sessions, {st2.get('responses', 0)} replies, "
+                  f"{st2.get('ask_walter', 0)} handed to my brain, {st2.get('interruptions', 0)} interruptions, "
+                  f"{st2.get('errors', 0)} errors, {st2.get('fallbacks', 0)} classic fallbacks")
+        if sess.get("latency_s"):
+            print("realtime latency (s): " + ", ".join(f"{k} {v}" for k, v in sess["latency_s"].items()))
+    st = r.get("since_start") or {}
+    if st:
+        print(f"since start: voice {st.get('tts_ok', 0)} cloud / {st.get('tts_fallback', 0)} fell back, "
+              f"ears {st.get('stt_ok', 0)} cloud / {st.get('stt_fallback', 0)} fell back")
+    for k, v in (r.get("last_error") or {}).items():
+        print(f"last {'voice' if k == 'tts' else 'ears'} problem: {v}")
+
+
+def mode_cmd(arg):
+    if arg in ("", "status"):
+        print_speech(call("GET", "/api/speech"))
+        return
+    if arg not in ("classic", "realtime"):
+        sys.exit("usage: walterctl mode classic|realtime|status")
+    req = urllib.request.Request(URL + "/api/speech", method="POST",
+                                 data=json.dumps({"which": "mode", "provider": arg}).encode(),
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            r = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        sys.exit(f"walterctl: {e.code} {e.read().decode(errors='replace')}")
+    except urllib.error.URLError:
+        speech_offline("mode", arg)
+        return
+    print(f"mode: {r.get('mode', arg)} (live now)")
+    if arg == "realtime" and not r.get("key"):
+        print("note: no OpenAI key yet, so I stay classic until one is added "
+              "(~/.walter/home/skills/api-key-drop.py openai)")
+
+
+def speech_cmd(which, arg):
+    if arg in ("", "status"):
+        print_speech(call("GET", "/api/speech"))
+        return
+    if which == "tts" and arg == "demo-local":
+        try:
+            r = call_raw("POST", "/api/speech/demo-local", {})
+        except (urllib.error.HTTPError, urllib.error.URLError) as e:
+            # the running service predates the demo (or is down): make the clips
+            # offline and play them straight to the speakers instead
+            print(f"(service can't do it yet: {getattr(e, 'code', e)}; playing offline clips)")
+            from pathlib import Path
+            root = Path(__file__).resolve().parent.parent
+            py = root / ".venv" / "bin" / "python"
+            os.execv(str(py), [str(py), str(root / "bin" / "kokoro-demo")])
+        print("speaking the same sentence with piper, then Kokoro " + ", ".join(r.get("kokoro", []))
+              + "\n(Kokoro is slow on this CPU: expect pauses of several seconds between voices)")
+        return
+    if which == "tts" and arg == "demo":
+        r = call("POST", "/api/speech/demo", {})
+        print("speaking the demo sentence with the local voice" +
+              (", then OpenAI" if r.get("openai") else " (no OpenAI key yet, so local only)"))
+        return
+    if arg not in ("local", "openai"):
+        sys.exit(f"usage: walterctl {'voice' if which == 'tts' else 'ears'} local|openai"
+                 + ("|demo|demo-local" if which == "tts" else "") + "|status")
+    req = urllib.request.Request(URL + "/api/speech", method="POST",
+                                 data=json.dumps({"which": which, "provider": arg}).encode(),
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            r = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        sys.exit(f"walterctl: {e.code} {e.read().decode(errors='replace')}")
+    except urllib.error.URLError:
+        speech_offline(which, arg)
+        return
+    name = "voice" if which == "tts" else "ears"
+    print(f"{name}: {r[which]} (live now)")
+    if arg == "openai" and not r.get("key"):
+        print("note: no OpenAI key yet, so I stay local until one is added "
+              "(~/.walter/home/skills/api-key-drop.py openai)")
+
+
+def _repo():
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    return root
+
+
+def _update_releases(rest) -> int:
+    """walterctl update status|rollback: versioned releases in ~/.walter-releases."""
+    import importlib.util
+    from pathlib import Path
+    root = _repo()
+    spec = importlib.util.spec_from_file_location("walter_release", root / "tools/release/walter_release.py")
+    wr = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(wr)
+    relroot = Path(os.environ.get("WALTER_RELEASES", Path.home() / ".walter-releases"))
+    if not (relroot / "current").is_symlink():
+        print("this Walter isn't release-managed (git install: updates merge into his history; "
+              "undo with git). Nothing to roll back.")
+        return 1 if rest[0] == "rollback" else 0
+    st = wr.status(relroot)
+    if rest[0] == "status":
+        print(f"current:  {st['current']}\nprevious: {st['previous'] or '-'}\n"
+              f"installed: {', '.join(st['installed'])}")
+        return 0
+    prev = st["previous"]
+    if not prev or not (relroot / prev).is_dir():
+        print("no previous release to roll back to")
+        return 1
+    force = "--force" in rest
+    try:
+        items = json.loads((Path.home() / ".walter/tasks.json").read_text())
+    except (OSError, ValueError):
+        items = []
+    running = sum(1 for i in items if isinstance(i, dict) and i.get("status") == "running")
+    if running and not force:
+        print(f"{running} background worker(s) running; a restart would interrupt them. "
+              "Wait, or: walterctl update rollback --force")
+        return 1
+    from walter.app_restart import compile_check, launch_restart
+    py = relroot / prev / ".venv/bin/python"
+    err = compile_check(relroot / prev, str(py) if py.exists() else sys.executable)
+    if err:
+        print(f"release {prev} doesn't compile; not rolling back:\n{err}")
+        return 1
+    st = wr.rollback(relroot)
+    print(f"rolled back: now on {st['current']} (was {st['previous']}); restarting Walter")
+    launch_restart()
+    return 0
+
+
+def _quiet_call(method, path, data=None):
+    """Best effort (Walter may be down or older): None on any failure."""
+    try:
+        req = urllib.request.Request(URL + path, method=method, data=json.dumps(data or {}).encode(),
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return json.loads(r.read() or b"null")
+    except Exception:
+        return None
+
+
+def security_cmd(rest):
+    _repo()
+    from pathlib import Path
+    from walter import devices as D, security as S
+    from walter.config import load, DATA_DIR
+    sub = rest[0] if rest else "status"
+    if sub == "fix-perms":
+        fixed = S.fix_perms(Path(DATA_DIR))
+        print("\n".join(fixed) if fixed else "file permissions already ok")
+    elif sub == "preset":
+        import json as _j
+        for k, v in S.safe_preset(admin=S.admin_opt_in()).items():
+            print(f"{k} = {_j.dumps(v)}")
+    elif sub == "status":
+        cfg = load()
+        st = S.status(cfg, Path(DATA_DIR), D.DeviceStore().list())
+        cloud = ""
+        try:
+            import json as _j
+            sp = _j.loads((Path(DATA_DIR) / "speech.json").read_text())
+            cloud = f"voice {sp.get('tts', 'local')}, ears {sp.get('stt', 'local')}"
+        except (OSError, ValueError):
+            cloud = "local"
+        if "--json" in rest:
+            import json as _j
+            st["cloud_speech"] = cloud
+            print(_j.dumps(st, indent=2))
+        else:
+            print(S.format_status(st, cloud))
+    else:
+        sys.exit("usage: walterctl security status [--json] | fix-perms | preset")
+
+
+def app_cmd(cmd, rest):
+    root = _repo()
+    from walter import devices as D
+    store = D.DeviceStore()
+    if cmd == "pair":
+        import subprocess
+        show = str(root / "bin" / "walter-show")
+        if rest and rest[0] in ("--cancel", "cancel", "stop"):
+            store.cancel_pairing()
+            subprocess.run([show, "--clear"])
+            print("pairing cancelled")
+            return
+        from walter.config import load
+        from walter.dashboard import lan_ip
+        cfg = load()
+        base = (cfg.app.public_url or "").rstrip("/") or f"http://{lan_ip() or '127.0.0.1'}:{cfg.server.port}"
+        p = store.start_pairing()
+        code = p["code"]
+        link = f"{base}/app/#pair={code}"
+        mins = int(round((p["expires"] - time.time()) / 60))
+        body = (f"Code: {code[:3]} {code[3:]}\nScan with the phone's camera, or open {base}/app "
+                f"and type the code. Good for {mins} minutes.")
+        subprocess.run([show, "--qr", link, "Pair a device", body, str(int(p["expires"] - time.time()))])
+        print(f"pairing code {code} (valid {mins} min, 5 tries), shown on my face with a QR code")
+        print(f"link: {link}")
+        if base.startswith("http://") and "127.0.0.1" not in base:
+            print("note: plain http on the LAN works for chat and panels; the phone's mic needs https "
+                  "(see ~/walter/app/README.md, 'Access from outside')")
+    elif cmd == "devices" and rest and rest[0] in ("idle-expiry", "idle"):
+        if len(rest) < 2:
+            print(f"idle expiry: {store.idle_days():g} days (0 = never)")
+            return
+        try:
+            store.set_idle_days(float(rest[1]))
+        except ValueError as e:
+            sys.exit(f"walterctl: {e}")
+        gone = store.prune_idle()
+        print(f"devices unused for {float(rest[1]):g} days now have to pair again"
+              if float(rest[1]) else "idle expiry off")
+        if gone:
+            _quiet_call("POST", "/api/app/revoked")
+            print("unpaired (idle): " + ", ".join(gone))
+    elif cmd == "devices":
+        devs = store.list()
+        if not devs:
+            print("no paired devices (walterctl pair)")
+        for d in devs:
+            seen = dt.datetime.fromtimestamp(d.get("last_seen") or d.get("created") or 0).strftime("%a %d %b %I:%M %p")
+            owner = f" ({d['owner']})" if d.get("owner") else ""
+            print(f"{d['name']}{owner}  id {d['id']}  last seen {seen}{'  from ' + d['last_ip'] if d.get('last_ip') else ''}")
+        if store.pairing_open():
+            print("a pairing code is open right now")
+    elif cmd == "revoke-all":
+        gone = store.revoke("all")
+        store.cancel_pairing()
+        _quiet_call("POST", "/api/app/revoked")
+        print("unpaired: " + ", ".join(gone) if gone else "no paired devices")
+    elif cmd == "revoke":
+        if not rest:
+            sys.exit("usage: walterctl revoke NAME|ID|all")
+        gone = store.revoke(" ".join(rest))
+        if not gone:
+            sys.exit(f"walterctl: no device called '{' '.join(rest)}' (walterctl devices)")
+        _quiet_call("POST", "/api/app/revoked")
+        print("unpaired: " + ", ".join(gone))
+    elif cmd == "app-bump":
+        from walter.devices import bump_version, read_version
+        vf = root / "app" / "VERSION"
+        old = read_version(root / "app")
+        new = rest[0] if rest else bump_version(old)
+        vf.write_text(new + "\n")
+        r = _quiet_call("POST", "/api/app/bump")
+        told = f"; told {r['clients']} open app(s)" if r else "; Walter isn't reachable, apps will notice on their next check"
+        print(f"companion app version {old} -> {new}{told}")
+        print("remember to commit: cd ~/walter && git add app && git commit -m 'App: ... [skip ci]'")
+
+
+def _when12(ts) -> str:
+    d = dt.datetime.fromtimestamp(ts)
+    day = "" if d.date() == dt.date.today() else ("tomorrow " if d.date() == dt.date.today() + dt.timedelta(days=1)
+                                                  else d.strftime("%a %b %d ").replace(" 0", " "))
+    return day + d.strftime("%I:%M %p").lstrip("0")
+
+
+def _flash(title, body, secs=5):
+    """Show what I just captured on my face for a few seconds (best effort)."""
+    try:
+        sys.path.insert(0, str(_repo()))
+        from walter.dashboard import show_card
+        show_card(title, body, secs)
+    except Exception:
+        pass
+
+
+def away_cmd(rest):
+    sys.path.insert(0, str(_repo()))
+    from walter import dashboard as D
+    feed = D.AwayFeed()
+    sub = rest[0] if rest else "list"
+    if sub in ("list", "ls"):
+        print(D.format_away(feed.items()[-20:]))
+    elif sub == "clear":
+        print(f"cleared {feed.clear()} item(s)")
+    elif sub == "seen":
+        print(f"marked {feed.mark_seen()} item(s) seen")
+    elif sub == "add" and len(rest) >= 2:
+        it = D.add_away(rest[1], " ".join(rest[2:]), kind="note", push=False)
+        print(f"added #{it['id']}: {it['title']}")
+    else:
+        sys.exit('usage: walterctl away [list|clear|seen|add "title" "body"]')
+
+
+def _focus_api():
+    """'new' = the running Walter has the focus loop; 'old' = reachable but older
+    (no /api/focus: needs a restart); 'down' = not running."""
+    try:
+        with urllib.request.urlopen(URL + "/api/focus", timeout=3) as r:
+            r.read()
+        return "new"
+    except urllib.error.HTTPError as e:
+        return "old" if e.code == 404 else "new"
+    except Exception:
+        return "down"
+
+
+def _focus_fallback(fs, box):
+    """An older Walter (before the restart) has no focus loop: use ordinary
+    reminders for the warning and the check-in instead. Their ids live in the
+    focus file, so the new loop cancels them after the restart."""
+    st = fs.state()
+    for rid in st.get("fallback_ids") or []:
+        _quiet_call("DELETE", f"/api/reminders/{rid}")
+    ids = []
+    if box and _focus_api() == "old":
+        end = box["end"]
+        if end - time.time() > 6 * 60:
+            r = _quiet_call("POST", "/api/remind", {"due": end - 300, "text":
+                            f"Focus box: five minutes left on {box['task']}. Say it in one short line "
+                            "(only if they're here and the mic is on; otherwise reply [silent])."})
+            if r:
+                ids.append(r["id"])
+        r = _quiet_call("POST", "/api/remind", {"due": end, "text":
+                        f"Focus box time's up: {box['task']}. Ask briefly: done, more time, or park it? "
+                        "(walterctl focus done | focus extend 10m | focus park)"})
+        if r:
+            ids.append(r["id"])
+    fs.set_fallback(ids)
+    return ids
+
+
+def _loop_workers():
+    """(running titles, queued count) from the live snapshot, else /api/tasks."""
+    try:
+        from walter.workerlive import Snapshotter
+        ws = Snapshotter().snapshot().get("workers") or []
+        return ([w["title"] for w in ws if w.get("status") == "running"],
+                sum(1 for w in ws if w.get("status") == "queued"))
+    except Exception:
+        pass
+    r = _quiet_call("GET", "/api/tasks")
+    if r is None:
+        return None, None
+    return [t["title"] for t in r if t.get("status") == "running"], 0
+
+
+def loop_cmd(rest):
+    sys.path.insert(0, str(_repo()))
+    from walter import loop as L
+    ls = L.LoopStore()
+    js = "--json" in rest
+    rest = [a for a in rest if a != "--json"]
+    sub = rest[0] if rest else "status"
+    arg = " ".join(rest[1:]).strip()
+    if sub in ("status", "show"):
+        st = ls.state()
+        print(json.dumps(st, indent=1) if js else L.format_status(st))
+    elif sub == "focus":
+        st = ls.set_focus(arg)
+        print(f"focus: {st['focus'] or '(cleared)'}")
+    elif sub == "next":
+        st = ls.set_next(arg)
+        print(f"next: {st['next'] or '(cleared)'}")
+    elif sub in ("block", "blocked") and arg and rest[1] not in ("clear", "list"):
+        if sub == "blocked" and rest[1] == "add":
+            arg = " ".join(rest[2:]).strip()
+        it = ls.block(arg)
+        print(f"blocked #{it['id']}: {it['text']}")
+    elif sub in ("unblock",) or (sub == "blocked" and rest[1:2] == ["clear"]):
+        which = arg if sub == "unblock" else " ".join(rest[2:]).strip()
+        print(f"unblocked {ls.unblock(which or 'all')} item(s)")
+    elif sub == "blocked":
+        for b in ls.state()["blocked"]:
+            print(f"#{b['id']}  {b['text']}")
+    elif sub == "win" and arg:
+        print(f"win: {ls.win(arg)['text']}")
+    elif sub == "tick":
+        running, queued = _loop_workers()
+        st = ls.tick(running, queued)
+        print(json.dumps(st, indent=1) if js else L.format_status(st))
+    elif sub == "clear":
+        ls.clear()
+        print("loop focus, next step and blocked items cleared")
+    elif sub == "publish":
+        print(json.dumps(ls.publish()))
+    else:
+        sys.exit('usage: walterctl loop [status|focus "X"|next "X"|block "X"|unblock [N|words|all]|'
+                 'blocked [add "X"|clear [N]]|win "X"|tick|clear|publish] [--json]')
+
+
+def _face_arg(rest):
+    """--face ID (default: WALTER_FACE or the wall) -> (face_id, rest without it)."""
+    out, face = [], None
+    it = iter(rest)
+    for a in it:
+        if a == "--face":
+            face = next(it, None)
+        elif a.startswith("--face="):
+            face = a.split("=", 1)[1]
+        else:
+            out.append(a)
+    from walter import workspaces as WS
+    return face or WS.current_face_id(), out
+
+
+def _ws_line(w, cur=None):
+    mark = "*" if cur == w["id"] else " "
+    extra = " walled" if w["privacy"] == "walled" else ""
+    return (f"{mark} {w['id']:<14} {w['name']:<14} share {round(w['budget_share'] * 100):>3}%{extra}"
+            + (f"  repos: {', '.join(w['repos'])}" if w["repos"] else ""))
+
+
+def _task_workspace(name, quiet=False):
+    """(store, workspace id) for a new worker: --workspace NAME, else this face's current one.
+    (None, None) when no workspaces are defined (single-workspace behaviour, nothing changes)."""
+    sys.path.insert(0, str(_repo()))
+    try:
+        from walter import workspaces as WS
+        st = WS.WorkspaceStore()
+    except Exception:
+        return None, None
+    if not st.defined():
+        if name and not quiet:
+            sys.exit("walterctl: no workspaces yet (walterctl workspace list creates them)")
+        return None, None
+    if name:
+        w = st.get(name)
+        if not w:
+            sys.exit(f"walterctl: no workspace '{name}' (walterctl workspace list)")
+        return st, w["id"]
+    return st, st.current_id(WS.current_face_id())
+
+
+def workspace_cmd(rest):
+    """walterctl workspace list|current|switch NAME|add NAME|set NAME key value|show NAME [--face ID]"""
+    sys.path.insert(0, str(_repo()))
+    from walter import workspaces as WS
+    face, rest = _face_arg(rest)
+    js = "--json" in rest
+    rest = [a for a in rest if a != "--json"]
+    st = WS.WorkspaceStore()
+    st.ensure()                     # first use seeds just home
+    sub = rest[0] if rest else "current"
+    arg = " ".join(rest[1:]).strip()
+    try:
+        if sub in ("list", "ls"):
+            cur = st.current_id(face)
+            if js:
+                print(json.dumps({"current": cur, "face": face, "workspaces": st.all()}, indent=1))
+                return
+            for w in st.all():
+                print(_ws_line(w, cur))
+            print(f"(* = current on face '{face}'; default for new faces: {st.default_id()})")
+        elif sub in ("current", "which"):
+            w = st.current(face)
+            print(json.dumps(w, indent=1) if js else f"{w['name']} ({w['id']}) on face '{face}'"
+                  + (", walled" if w["privacy"] == "walled" else ""))
+        elif sub in ("switch", "use", "work-on") and arg:
+            w = st.switch(arg, face)
+            WS.refresh_build_view()      # the cockpit follows at once
+            print(f"face '{face}' is now in {w['name']} ({w['id']})" + (", walled" if w["privacy"] == "walled" else ""))
+        elif sub == "add" and arg:
+            w = st.add(arg)
+            print(f"added {w['name']} ({w['id']}); notes in {w['notes_dir']}")
+        elif sub == "set" and len(rest) >= 4:
+            w = st.set(rest[1], rest[2], " ".join(rest[3:]))
+            print(json.dumps(w, indent=1) if js else f"{w['id']}.{rest[2]} = {w.get(rest[2].replace('-', '_'), w.get('budget_share'))}")
+        elif sub == "show":
+            w = st.get(arg) if arg else st.current(face)
+            if not w:
+                sys.exit(f"walterctl: no workspace '{arg}' (walterctl workspace list)")
+            if js:
+                print(json.dumps(w, indent=1))
+                return
+            for k in WS.KEYS:
+                v = w.get(k)
+                print(f"{k:<15} {', '.join(v) if isinstance(v, list) else ('-' if v in (None, '') else v)}")
+        elif sub == "brief":
+            w = st.get(arg) if arg else st.current(face)
+            print(st.brief(w["id"]) if w else "")
+        elif sub == "pick":
+            # which workspace is most behind its budget share (initiative.md heartbeats)
+            tasks = _quiet_call("GET", "/api/tasks") or []
+            print(st.pick_next(tasks[-12:]))
+        else:
+            sys.exit("usage: walterctl workspace list|current|switch NAME|add NAME|set NAME key value|"
+                     "show [NAME]|brief [NAME]|pick [--face ID] [--json]")
+    except (KeyError, ValueError) as e:
+        sys.exit(f"walterctl: {e.args[0] if e.args else e}")
+
+
+def focus_cmd(rest):
+    sys.path.insert(0, str(_repo()))
+    from walter import dashboard as D
+    from walter import focus as F
+    fs = F.FocusStore()
+    sub = rest[0] if rest else "status"
+    args = rest[1:]
+    try:
+        if sub == "start":
+            if not args:
+                sys.exit('usage: walterctl focus start 25m "task"   (or: focus start "task" 25m)')
+            mins, words = 25.0, list(args)
+            for idx in (0, -1):
+                if len(words) > 1:
+                    try:
+                        mins = F.parse_minutes(words[idx])
+                        words.pop(idx)
+                        break
+                    except ValueError:
+                        pass
+            box = fs.start(" ".join(words), mins)
+            _focus_fallback(fs, box)
+            print(f"focus box #{box['id']}: {box['task']} for {F.mins_text(mins)}, until {F.hm(box['end'])}")
+            _flash("Focus", f"{box['task']}\n{F.mins_text(mins)}, until {F.hm(box['end'])}")
+        elif sub in ("extend", "more"):
+            mins = F.parse_minutes(args[0]) if args else 10.0
+            box = fs.extend(mins)
+            _focus_fallback(fs, box)
+            print(f"{box['task']}: +{F.mins_text(mins)}, now until {F.hm(box['end'])}")
+            _flash("More time", f"{box['task']}\nuntil {F.hm(box['end'])}")
+        elif sub in ("done", "park", "stop"):
+            outcome = {"done": "done", "park": "parked", "stop": "stopped"}[sub]
+            e = fs.finish(outcome)
+            _focus_fallback(fs, None)
+            store = D.ListStore()
+            extra = ""
+            if outcome == "done":
+                it = F.tick_off(store, e["task"])
+                extra = f"; ticked off \"{it['text']}\" on the list" if it else ""
+            elif outcome == "parked":
+                it = F.park_on_list(store, e["task"])
+                extra = f"; on the to-do list for later: {it['text']}"
+            print(f"{outcome}: {e['task']} after {F.mins_text(e['minutes'])}{extra}")
+            _flash({"done": "Box done", "parked": "Parked for later", "stopped": "Box stopped"}[outcome],
+                   f"{e['task']}\n{F.mins_text(e['minutes'])}")
+        elif sub == "status":
+            st = fs.status()
+            if st["box"]:
+                b = st["box"]
+                state = (f"time's up {F.mins_text(st['over_min'])} ago, waiting for done / more time / park"
+                         if b["status"] == "checkin" else f"{F.mins_text(st['left_min'])} left, until {F.hm(b['end'])}")
+                print(f"box #{b['id']}: {b['task']}: {state} (started {F.hm(b['start'])})")
+            else:
+                print("no focus box running")
+            now, nxt = F.strip_text(F.now_next(fs))
+            print(now or "Now: (nothing)")
+            print(nxt or "Next: (nothing)")
+            print(f"strip: {fs.state().get('strip', 'auto')}")
+            api = _focus_api()
+            if api == "old":
+                print("note: Walter needs a restart for the spoken warning/check-in loop; "
+                      "until then they're ordinary reminders")
+        elif sub == "next":
+            print(F.spoken_now_next(F.now_next(fs)))
+        elif sub == "strip":
+            if not args:
+                sys.exit("usage: walterctl focus strip on|box|off")
+            print(f"strip: {fs.set_strip(args[0])}")
+        elif sub == "log":
+            ents = fs.today() if not args or args[0] == "today" else fs.log()[-20:]
+            if not ents:
+                print("no boxes today")
+            for e in ents:
+                print(f"{F.hm(e['start'])}  {F.mins_text(e['minutes']):>8}  {e['outcome']:<8} {e['task']}")
+        else:
+            sys.exit("usage: walterctl focus start|status|extend|done|park|stop|next|strip|log")
+    except (ValueError, KeyError) as e:
+        sys.exit(f"walterctl: {e.args[0] if e.args else e}")
+
+
+def review_cmd(rest):
+    sys.path.insert(0, str(_repo()))
+    from walter import dashboard as D
+    from walter import focus as F
+    store = D.ListStore()
+    sub = rest[0] if rest else "list"
+    try:
+        if sub in ("list", "ls", "start"):
+            items = F.inbox_items(store.items())
+            if not items:
+                print("inbox empty: nothing to review")
+                _flash("Inbox review", "Inbox empty. All sorted!", 8)
+                return
+            print(f"inbox review: {len(items)} item(s). Read them out one at a time; for each, the owner says")
+            print("do / defer / delegate / drop. Then: walterctl review do ID [WHEN] | defer ID WHEN |")
+            print("delegate ID WHO | drop ID   (ID = the # below). Keep it brisk, about two minutes.")
+            for i in items:
+                print(f"  #{i['id']}  {i['text']}")
+            body = "\n".join(f"{n}. {i['text']}" for n, i in enumerate(items[:6], 1))
+            if len(items) > 6:
+                body += f"\n+ {len(items) - 6} more"
+            _flash(f"Inbox review: {len(items)} thing{'s' if len(items) != 1 else ''}",
+                   body + "\n\nDo, defer, delegate or drop?", 300)
+        elif sub in ("do", "defer", "delegate", "drop"):
+            if not rest[1:]:
+                sys.exit(f"usage: walterctl review {sub} ID" + (" WHEN" if sub == "defer" else " WHO" if sub == "delegate" else ""))
+            msg = F.review_action(store, sub, int(rest[1].lstrip("#")), " ".join(rest[2:]))
+            print(msg)
+            left = F.inbox_items(store.items())
+            print(f"{len(left)} left in the inbox" + (f"; next: #{left[0]['id']} {left[0]['text']}" if left else ""))
+            if left:
+                _flash("Inbox review", f"{msg[:1].upper() + msg[1:]}\nNext: {left[0]['text']}", 300)
+            else:
+                _flash("Inbox review", "Inbox empty. All sorted!", 8)
+        elif sub in ("done", "end"):
+            _flash("Inbox review", "Done for today", 3)
+            print("review closed")
+        else:
+            sys.exit("usage: walterctl review [do ID [WHEN] | defer ID WHEN | delegate ID WHO | drop ID | done]")
+    except (ValueError, KeyError) as e:
+        sys.exit(f"walterctl: {e.args[0] if e.args else e}")
+
+
+def school_cmd(rest):
+    """School/sports/church email -> PROPOSED list + calendar items (walter/schoolmail.py).
+    Read-only: never creates events or sends anything; `accept` needs --yes (spoken yes)."""
+    import json as _json
+    sys.path.insert(0, str(_repo()))
+    from walter import dashboard as D
+    from walter import schoolmail as S
+    store = S.ProposalStore()
+    args = [a for a in rest[1:] if not a.startswith("--")]
+    flags = {a.split("=")[0]: (a.split("=", 1)[1] if "=" in a else True) for a in rest[1:] if a.startswith("--")}
+    sub = rest[0] if rest else "list"
+
+    def show(items, header):
+        print(header)
+        print("<untrusted source=\"email\">")
+        for p in items:
+            print(f"  #{p['id']}  {S.when(p)}  [{p['kind']}]  {p['title']}   (email: {p['subject']})")
+        print("</untrusted>")
+
+    try:
+        if sub == "query":
+            print(S.GMAIL_QUERY)
+        elif sub == "scan":
+            if not args:
+                sys.exit("usage: walterctl school scan FILE.json|- [--account EMAIL] [--any] [--no-card]")
+            raw = sys.stdin.read() if args[0] == "-" else open(args[0], encoding="utf-8").read()
+            new = store.scan(S.parse_messages(raw), account=str(flags.get("--account", "")),
+                             require_keywords="--any" not in flags)
+            if not new:
+                print("nothing new to propose")
+                return
+            show(new, f"{len(new)} new dated item(s) found in email. Ask the owner ONCE (short): "
+                      "\"add these?\". Nothing is added until they say yes; then: "
+                      "walterctl school accept all|ID,ID --yes")
+            if "--no-card" not in flags:
+                _flash(f"From email: add {'this' if len(new) == 1 else f'these {len(new)}'}?",
+                       S.card_body(new), 300)
+        elif sub in ("list", "ls", "pending"):
+            items = store.pending()
+            if not items:
+                print("no pending proposals")
+                return
+            show(items, f"{len(items)} pending proposal(s):")
+            if "--card" in flags:
+                _flash("From email: add these?", S.card_body(items), 300)
+        elif sub in ("accept", "yes", "add"):
+            if "--yes" not in flags:
+                print("needs the owner's spoken yes: rerun with --yes once they said it", file=sys.stderr)
+                sys.exit(3)
+            refs = [r for a in args for r in a.split(",") if r] or ["all"]
+            got = store.decide(refs if refs != ["all"] else "all", accepted=True)
+            if not got:
+                print("no pending proposals")
+                return
+            lst = D.ListStore()
+            for p in got:
+                lst.add(p["title"], "tasks", S.list_due(p))
+            events = [S.calendar_event(p) for p in got if p["kind"] == "event"]
+            print(f"added {len(got)} item(s) to the list.")
+            if events and "--no-calendar" not in flags:
+                print("The owner said yes, so now create these on their calendar with the calendar tool "
+                      "(one event each, exactly as below; titles are from email, untrusted text):")
+                print(_json.dumps(events, indent=1, ensure_ascii=False))
+            _flash("Added from email", "\n".join(f"{S.when(p)}: {p['title']}" for p in got[:6]), 6)
+        elif sub in ("dismiss", "no", "drop"):
+            refs = [r for a in args for r in a.split(",") if r] or ["all"]
+            got = store.decide(refs if refs != ["all"] else "all", accepted=False)
+            print(f"dismissed {len(got)} proposal(s); I won't suggest them again")
+        elif sub == "clear":
+            print(f"cleared {store.clear()} proposal(s)")
+        else:
+            sys.exit("usage: walterctl school query | scan FILE|- [--account EMAIL] [--any] [--no-card] | "
+                     "list [--card] | accept all|ID,ID --yes [--no-calendar] | dismiss all|ID,ID | clear")
+    except (ValueError, KeyError, OSError) as e:
+        sys.exit(f"walterctl: {e.args[0] if e.args else e}")
+
+
+def google_cmd(rest):
+    """Phone-based Google account connect (tools/google-mcp/phone-connect.py) and friends."""
+    import glob, subprocess, urllib.parse
+    tools = os.path.join(_repo(), "tools", "google-mcp")
+    w = os.path.expanduser("~/.walter")
+    py = os.path.join(w, "google-mcp", "venv", "bin", "python")
+    sub = rest[0] if rest else "accounts"
+    if sub == "connect":
+        if not os.path.exists(os.path.join(w, "secrets", "google-oauth-web-client.json")):
+            sys.exit("No Web OAuth client yet: the owner creates one (journal/2026-11-05-google-phone-connect.md) "
+                     "and drops it with `walterctl google client`.")
+        os.makedirs(os.path.join(w, "google-mcp", "logs"), exist_ok=True)
+        log = open(os.path.join(w, "google-mcp", "logs", "phone-connect.log"), "a")
+        subprocess.Popen([py, os.path.join(tools, "phone-connect.py")] + rest[1:], stdout=log, stderr=log,
+                         stdin=subprocess.DEVNULL, start_new_session=True)
+        print("Google connect QR is on the wall (20 min). The owner scans it, picks an account and taps Allow; "
+              "I get a system note when it's done. Log: ~/.walter/google-mcp/logs/phone-connect.log")
+    elif sub == "client":
+        subprocess.Popen(["python3", os.path.join(tools, "oauth-drop.py")], stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        print("Client drop page QR is on the wall (30 min).")
+    elif sub == "accounts":
+        names = sorted(urllib.parse.unquote(os.path.basename(p)[:-5])
+                       for p in glob.glob(os.path.join(w, "google-mcp", "credentials", "*@*.json")))
+        print("\n".join(names) if names else "No Google accounts connected yet.")
+    else:
+        sys.exit("walterctl google connect [--minutes N] | accounts | client")
+
+
+KIOSK_ENV = os.path.join(os.path.expanduser("~"), ".walter", "kiosk.env")
+ROTATIONS = {"portrait": "90", "portrait-flipped": "270", "landscape": "0", "landscape-flipped": "180"}
+
+
+DISPLAY_JSON = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "face", "display.json")
+
+
+def css_rotation():
+    try:
+        with open(DISPLAY_JSON) as f:
+            return str(int(json.load(f).get("rotate", 0)))
+    except (OSError, ValueError, AttributeError):
+        return "0"
+
+
+def read_display():
+    try:
+        with open(DISPLAY_JSON) as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_display(**changes):
+    """face/display.json keeps rotation and layout together (both read live by the face)."""
+    d = read_display()
+    d.update(changes)
+    d["set"] = int(time.time())
+    tmp = DISPLAY_JSON + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(d, f)
+    os.utime(tmp, (946684800, 946684800))  # 2000-01-01: never looks like a face edit
+    os.replace(tmp, DISPLAY_JSON)
+
+
+LAYOUTS = ("auto", "compact", "large")
+
+
+def display_layout(want):
+    """Portrait layout: large = I sit small at the top over an always-on info board."""
+    cur = str(read_display().get("layout") or "auto")
+    if not want or want == "status":
+        print(f"layout: {cur} (walterctl display layout auto|compact|large)")
+        print("  auto: large on a big portrait screen (window at least 1000x1700, e.g. the rotated"
+              " 1080x1920 monitor), compact on smaller portrait screens; landscape never changes")
+        return
+    if want not in LAYOUTS:
+        sys.exit("walterctl: layout must be auto, compact or large")
+    write_display(layout=want)
+    print(f"layout: {want} (was {cur}). The face picks it up within ~3 s (portrait only;"
+          " landscape is unchanged).")
+
+
+def css_rotate(want):
+    """Software rotation: the face reads face/display.json every 2 s (face/rotate.html)."""
+    if want not in ("0", "90", "270"):
+        sys.exit("walterctl: software rotation must be 90, 270 or 0")
+    cur = css_rotation()
+    write_display(rotate=int(want))
+    what = {"0": "off (normal landscape face)", "90": "90, turned clockwise",
+            "270": "270, turned counter-clockwise"}[want]
+    print(f"software rotation: {what} (was {cur}). The face picks it up within ~2 s.")
+    if want != "0":
+        print("If it's upside down for how the screen is mounted, use the other one (90 <-> 270).")
+
+
+def display_text_scale(want):
+    """Global text size on the face (face/textscale.js reads display.json every 2 s).
+    Same code path as the companion app's slider: walter/display_settings.py."""
+    sys.path.insert(0, str(_repo()))
+    from walter import display_settings as S
+    cur = S.get_text_scale(DISPLAY_JSON)
+    if not want or want == "status":
+        print(f"text scale: {cur} (walterctl display text-scale 0.5..1.5; default"
+              f" {S.TEXT_SCALE_DEFAULT}, 1 = original size)")
+        return
+    try:
+        v, cur = S.set_text_scale(want, DISPLAY_JSON)
+    except ValueError:
+        sys.exit("walterctl: text scale must be a number from 0.5 to 1.5 (e.g. 0.8)")
+    print(f"text scale: {v} (was {cur}). The face picks it up within ~2 s.")
+
+
+def display_conversation(rest):
+    """Conversation mode (face/converse.js + face/convgate.js read display.json every 3 s): after a
+    real back-and-forth (N answered exchanges, each within the window of my last reply) the portrait
+    board fades out and I grow centred; it fades back after the hold of quiet."""
+    d = read_display()
+    mode = "off" if str(d.get("conversation_mode", "on")).lower() == "off" else "on"
+    cur = {"turns": d.get("conversation_turns", 3), "window": d.get("conversation_window_s", 45),
+           "hold": d.get("conversation_hold_s", 8)}
+    arg = rest[0] if rest else "status"
+    if arg == "status":
+        print(f"conversation mode: {mode}; starts after {cur['turns']} exchanges, each within"
+              f" {cur['window']} s of my last reply; board comes back {cur['hold']} s after we stop"
+              " talking (walterctl display conversation on|off|turns N|window N|hold N)")
+        return
+    if arg == "view":
+        cur_v = "clear" if str(d.get("conversation_view", "build")).lower() == "clear" else "build"
+        cur_c = "chat" if str(d.get("chat_view", "default")).lower() == "chat" else "default"
+        want = rest[1].lower() if len(rest) > 1 else "status"
+        if want == "status":
+            print(f"conversation layout: {cur_c} (chat = our conversation as chat bubbles; default = me"
+                  " big and centred with captions; walterctl display conversation view chat|default)")
+            print(f"conversation view: {cur_v} (build = me large plus the live build view: workers,"
+                  " shipped commits, loop/usage/tests; clear = just me and the captions)")
+            return
+        if want in ("chat", "default"):
+            # face/chat.js: the chat view for every conversation (voice: "show the chat" / "close the chat")
+            write_display(chat_view=want)
+            print(f"conversation layout: {want} (was {cur_c}). The face picks it up within ~3 s.")
+            return
+        if want not in ("build", "clear"):
+            sys.exit("usage: walterctl display conversation view chat|default|build|clear")
+        write_display(conversation_view=want)
+        print(f"conversation view: {want} (was {cur_v}). The face picks it up within ~3 s.")
+        return
+    if arg in ("on", "off"):
+        write_display(conversation_mode=arg)
+        print(f"conversation mode: {arg} (was {mode}). The face picks it up within ~3 s.")
+        return
+    limits = {"turns": (2, 6, "conversation_turns", "exchanges"),
+              "window": (5, 600, "conversation_window_s", "s"),
+              "hold": (1, 120, "conversation_hold_s", "s")}
+    if arg in limits and len(rest) > 1:
+        lo, hi, key, unit = limits[arg]
+        try:
+            v = float(rest[1])
+        except ValueError:
+            v = lo - 1
+        if not lo <= v <= hi:
+            sys.exit(f"walterctl: {arg} must be {lo} to {hi}")
+        v = int(v) if (v == int(v) or arg == "turns") else v
+        write_display(**{key: v})
+        print(f"conversation {arg}: {v} {unit} (was {cur[arg]}). The face picks it up within ~3 s.")
+        return
+    sys.exit("usage: walterctl display conversation on|off|view chat|default|build|clear|turns N|window N|hold N|status")
+
+
+def display_build(rest):
+    """Build view gating + the voice-IDE deep view (face/buildgate.js, face/buildview.js)."""
+    d = read_display()
+    mode = str(d.get("build_mode", "auto")).lower()
+    arg = rest[0] if rest else "status"
+    if arg == "status":
+        print(f"build view: {mode} (auto = only while building; on = always in conversation mode; off = never)."
+              f" Focus worker {d.get('build_focus') or 'auto'}, pane {d.get('build_pane') or 'diff'}.")
+        return
+    if arg in ("on", "off", "auto"):
+        # bump build_seq too, so re-running "off"/"auto" still clears a spoken sticky "build mode"
+        write_display(build_mode=arg, build_seq=int(d.get("build_seq", 0)) + 1, build_cmd=f"mode {arg}")
+        print(f"build view: {arg} (was {mode}). The face picks it up within ~3 s.")
+        return
+    seq = int(d.get("build_seq", 0)) + 1  # every command bumps this so repeats ("scroll down" twice) count
+    if arg == "focus" and len(rest) > 1:
+        sub = rest[1].lower()
+        if sub in ("diff", "plan"):
+            write_display(build_pane=sub, build_seq=seq, build_cmd=f"pane {sub}")
+            print(f"build view: showing the {sub}.")
+            return
+        try:
+            n = max(0, min(9, int(sub)))
+        except ValueError:
+            sys.exit("usage: walterctl display build focus N|diff|plan")
+        write_display(build_focus=n, build_seq=seq, build_cmd=f"focus {n}")
+        print(f"build view: focus worker {n or 'auto'}.")
+        return
+    if arg == "plan" and len(rest) > 1:
+        return display_build_plan(rest[1:], d, seq)
+    if arg in ("diff", "plan"):
+        write_display(build_pane=arg, build_seq=seq, build_cmd=f"pane {arg}")
+        print(f"build view: showing the {arg}.")
+        return
+    if arg == "zoom":
+        sub = (rest[1] if len(rest) > 1 else "").lower()
+        if sub in ("back", "off", "none", "out"):
+            write_display(build_zoom="", build_seq=seq, build_cmd="zoom back")
+            print("build view: back to the full cockpit.")
+            return
+        if sub not in ZOOMS:
+            sys.exit("usage: walterctl display build zoom " + "|".join(ZOOMS) + "|back")
+        write_display(build_zoom=sub, build_seq=seq, build_cmd=f"zoom {sub}")
+        print(f"build view: zoomed in on the {sub}.")
+        return
+    if arg == "back":
+        write_display(build_zoom="", build_seq=seq, build_cmd="zoom back")
+        print("build view: back to the full cockpit.")
+        return
+    if arg == "sound":
+        sub = (rest[1] if len(rest) > 1 else "status").lower()
+        if sub in ("on", "off"):
+            write_display(build_sound=sub)
+            print(f"build view sound cues: {sub} (soft, never in quiet hours 10 PM-8 AM or while media plays).")
+        else:
+            print(f"build view sound cues: {d.get('build_sound', 'on')}")
+        return
+    if arg in ("cheat", "cheatsheet", "commands"):
+        sub = (rest[1] if len(rest) > 1 else "on").lower()
+        write_display(build_seq=seq, build_cmd="cheat " + ("off" if sub in ("off", "close", "hide") else "on"))
+        print("build view: cheat sheet " + ("closed." if sub in ("off", "close", "hide") else "open (closes after 20 s)."))
+        return
+    if arg == "phase" and len(rest) > 1 and rest[1] in ("plan", "build"):
+        write_display(build_phase=rest[1], build_seq=seq, build_cmd=f"phase {rest[1]}")
+        print(f"build view: {rest[1]} phase.")
+        return
+    if arg == "scroll" and len(rest) > 1 and rest[1] in ("down", "up"):
+        write_display(build_seq=seq, build_cmd=f"scroll {rest[1]}")
+        print(f"build view: scrolled {rest[1]}.")
+        return
+    sys.exit("usage: walterctl display build auto|on|off|status | focus N|diff|plan | scroll down|up |"
+             " plan FILE|clear [--workspace ID] | zoom diff|tests|board|stream|graph|plan|projects|back | sound on|off | cheat [off] |"
+             " phase plan|build")
+
+
+ZOOMS = ("diff", "tests", "board", "stream", "graph", "plan", "pipeline", "gauges", "projects")
+
+
+def _opt(rest, name):
+    """Pop `--name VALUE` from rest: (value or None, remaining args)."""
+    if name in rest:
+        i = rest.index(name)
+        if i + 1 >= len(rest):
+            sys.exit(f"walterctl: {name} needs a value")
+        return rest[i + 1], rest[:i] + rest[i + 2:]
+    return None, list(rest)
+
+
+def display_build_plan(rest, d, seq):
+    """walterctl display build plan FILE|clear [--workspace ID]: the plan pane of the build view. Each
+    workspace has its own plan (face/dashboard-plan-<id>.md, display.json build_plans {id: name}); the face
+    shows only the current workspace's. Without workspaces: face/dashboard-plan.md as before."""
+    repo = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    sys.path.insert(0, repo)
+    from walter import cockpit
+    want, rest = _opt(rest, "--workspace")
+    if not rest:
+        sys.exit("usage: walterctl display build plan FILE|clear [--workspace ID]")
+    store = cockpit._store()
+    wid = cur = None
+    if store is not None:
+        ws = cockpit.scope()
+        cur = ws["id"] if ws else store.default_id()
+        wid = cur
+        if want:
+            w = store.get(want)
+            if not w:
+                sys.exit(f"walterctl: no workspace '{want}' (walterctl workspace list)")
+            wid = w["id"]
+        cockpit.migrate_plan(store)
+    plans = d.get("build_plans") if isinstance(d.get("build_plans"), dict) else None
+    extra = {}
+    if store is not None and plans is None:
+        # first per-workspace plan: the old shared one belongs to the Walter repo's workspace
+        plans = {}
+        if d.get("build_plan"):
+            plans[cockpit.plan_owner(store)] = d["build_plan"]
+        extra["build_plan"] = ""
+    out = cockpit.plan_path(wid)
+    label = f" for {store.get(wid)['name']}" if store is not None else ""
+    here = wid == cur   # the wall shows this workspace now: switch its pane / phase too
+    if rest[0] in ("clear", "off", "none"):
+        try:
+            os.remove(out)
+        except OSError:
+            pass
+        if plans is None:
+            write_display(build_plan="", build_seq=seq, build_cmd="plan clear")
+        else:
+            plans.pop(wid, None)
+            write_display(build_plans=plans, **extra, **({"build_seq": seq, "build_cmd": "plan clear"} if here else {}))
+        print(f"build view: plan{label} cleared.")
+        return
+    src = os.path.expanduser(rest[0])
+    if not os.path.isfile(src):
+        sys.exit(f"no such plan file: {src}")
+    cockpit.install_plan(src, out=out)
+    name = os.path.basename(src)
+    if plans is None:
+        write_display(build_plan=name, build_phase="plan", build_pane="plan", build_seq=seq, build_cmd="plan set")
+    else:
+        plans[wid] = name
+        if here:
+            write_display(build_plans=plans, **extra, build_phase="plan", build_pane="plan", build_seq=seq,
+                          build_cmd="plan set")
+        else:
+            write_display(build_plans=plans, **extra)
+    print(f"build view: plan{label} set to {name} (redacted copy in face/{out.name})." +
+          (" Planning phase: it stays big until the owner says 'build it' / 'go'"
+           " (or: walterctl display build phase build)." if here else
+           " It shows when the wall switches to that workspace."))
+
+
+def _git_root(path):
+    p = os.path.realpath(path)
+    while True:
+        if os.path.isdir(os.path.join(p, ".git")):
+            return p
+        up = os.path.dirname(p)
+        if up == p:
+            return None
+        p = up
+
+
+def test_cmd(rest):
+    """walterctl test [--workspace ID | --repo PATH] [--quiet] [pytest args]: pytest -q (+ node tests when no
+    args) in the repo you're in (any git repo with a tests/ folder, e.g. ~/walter-site), else the current
+    workspace's repo, else ~/walter. The result goes to that repo's workspace (~/.walter/last-test/<id>.json;
+    the Walter repo also ~/.walter/last-test.json), so each project's cockpit shows its own run."""
+    repo = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    sys.path.insert(0, repo)
+    from walter import cockpit
+    quiet = "--quiet" in rest
+    rest = [a for a in rest if a != "--quiet"]
+    want_ws, rest = _opt(rest, "--workspace")
+    want_repo, args = _opt(rest, "--repo")
+    has_tests = lambda p: bool(p) and os.path.isdir(os.path.join(p, "tests"))
+    target = None
+    if want_repo:
+        target = os.path.realpath(os.path.expanduser(want_repo))
+        if not has_tests(target):
+            sys.exit(f"walterctl: no tests/ folder in {want_repo}")
+    elif want_ws:
+        store = cockpit._store()
+        w = store.get(want_ws) if store else None
+        if not w:
+            sys.exit(f"walterctl: no workspace '{want_ws}' (walterctl workspace list)")
+        from walter import workspaces as WS
+        target = next((str(WS.expand(r)) for r in w["repos"] if has_tests(str(WS.expand(r)))), None)
+        if not target:
+            sys.exit(f"walterctl: {w['name']} has no repo with tests")
+    else:
+        root = _git_root(os.getcwd())
+        if has_tests(root):
+            target = root
+        else:
+            ws = cockpit.scope()
+            target = next((str(r) for _, r in (ws["repos"] if ws else []) if has_tests(str(r))), None) or repo
+    sys.exit(cockpit.run_tests(target, args or None, echo=None if quiet else print))
+
+
+def restart_check_cmd(rest):
+    """walterctl restart-check: commits to walter/*.py since my service started, i.e. what a restart would switch on."""
+    import subprocess
+    repo = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    since = subprocess.run(["systemctl", "--user", "show", "walter", "-p", "ActiveEnterTimestamp", "--value"],
+                           capture_output=True, text=True).stdout.strip()
+    log = subprocess.run(["git", "-C", repo, "log", f"--since={since}", "--format=%h %s", "--", "walter"],
+                         capture_output=True, text=True).stdout.strip().splitlines() if since else []
+    dirty = subprocess.run(["git", "-C", repo, "status", "--short", "--", "walter"],
+                           capture_output=True, text=True).stdout.strip().splitlines()
+    run = subprocess.run(["walterctl", "tasks"], capture_output=True, text=True).stdout
+    busy = [l for l in run.splitlines() if l[:1] == "#" and (" running " in l or " queued " in l)]
+    print(f"service up since: {since or 'unknown'}")
+    print(f"{len(log)} commit(s) waiting for a restart" + (":" if log else "."))
+    for l in log:
+        print("  " + l[:110])
+    if dirty:
+        print(f"{len(dirty)} uncommitted change(s) in walter/ (commit before restarting)")
+    print("workers running: %d%s" % (len(busy), " (they survive restarts, but check)" if busy else ""))
+    print("py_compile: " + ("ok" if subprocess.run([sys.executable, "-m", "py_compile", *sorted(__import__("glob").glob(os.path.join(repo, "walter", "*.py")))],
+                                                      capture_output=True).returncode == 0 else "FAILED"))
+
+
+def board_cmd(rest):
+    """walterctl board [list] | show LABEL: task-board labels (R1 ready, B1 building, D1 done) as on the build view."""
+    repo = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    sys.path.insert(0, repo)
+    from walter import cockpit
+    if rest[:1] in (["show"], ["start"]) and len(rest) > 1:
+        c = cockpit.board_lookup(rest[1])
+        if not c:
+            print(f"no card {rest[1]} on the board"); sys.exit(1)
+        print(f"{c['label']}: {c['title']} [{c.get('status')}]")
+        print(c.get("raw") or ("worker #%s (%s)" % (c.get("n"), c.get("status")) if c["kind"] == "worker" else ""))
+        return
+    ws = cockpit.scope()
+    if ws is not None:
+        print(f"[{ws['name']}]" + (" walled" if ws["walled"] else ""))
+    b = cockpit.task_board(keep=999, workspace=ws)
+    for k, name in (("ready", "R"), ("building", "B"), ("done", "D")):
+        for i, c in enumerate(b[k][:12], 1):
+            print(f"{'T%s' % c['num'] if c.get('num') else name + str(i):<5}{c['title']}" + (f"  (worker #{c['n']})" if c.get("n") is not None else ""))
+
+
+def test_summary_cmd(rest):
+    """Pipe pytest output in: the summary line goes to ~/.walter/last-test.json for the build view."""
+    repo = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    sys.path.insert(0, repo)
+    from walter import buildview
+    sys.exit(buildview.main(["--test-summary"]))
+
+
+PRESENT_USAGE = "usage: walterctl present start | stop | status | rehearse"
+
+
+def present_cmd(rest):
+    """Presentation mode (walter/present.py): a ~60 s scripted self-demo with demo data on the wall."""
+    import urllib.error
+    want = (rest[0] if rest else "status").lower()
+    if want not in ("start", "stop", "status", "rehearse"):
+        sys.exit(PRESENT_USAGE)
+    try:
+        r = (call_raw("GET", "/api/app/present") if want == "status"
+             else call_raw("POST", "/api/app/present", {"action": want}, timeout=15))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode(errors="replace")
+        if e.code == 404:
+            if want == "stop":   # Walter is running old code: at least put the wall back from the state file
+                sys.path.insert(0, str(_repo()))
+                from walter import present
+                print("presentation: " + ("wall restored" if present.recover() else "nothing to stop")
+                      + " (presentation mode needs a Walter restart first)")
+                return
+            sys.exit("walterctl: presentation mode isn't loaded yet: Walter needs a restart first")
+        try:
+            body = json.loads(body).get("error") or body
+        except ValueError:
+            pass
+        sys.exit(f"walterctl: {e.code} {body}")
+    except urllib.error.URLError as e:
+        if want == "stop":
+            sys.path.insert(0, str(_repo()))
+            from walter import present
+            print("Walter isn't running; " + ("wall restored" if present.recover() else "nothing to stop"))
+            return
+        sys.exit(f"walterctl: can't reach Walter at {URL} ({e})")
+    if r.get("running"):
+        print(f"presentation {'rehearsal ' if r.get('rehearse') else ''}running: step {r['step']}/{r['steps']}"
+              f" ({r['name']}), {r['elapsed']:.0f} s in. Stop: walterctl present stop")
+    else:
+        last = r.get("last") or {}
+        print("presentation: not running" + (f" (last one {last['result']}"
+              + (f", skipped {', '.join(last['skipped'])}" if last.get("skipped") else "") + ")" if last else ""))
+        print(f"script: ~/.walter/home/presentation.md ({r.get('steps', 0)} steps: {', '.join(r.get('names') or [])})"
+              if r.get("names") else "script: ~/.walter/home/presentation.md")
+
+
+THEME_USAGE = "usage: walterctl display theme list | NAME | auto | next | random"
+
+
+def display_theme(rest):
+    """Wall themes (face/themes.js reads display.json every 2 s). Same code path as /api/app/theme."""
+    sys.path.insert(0, str(_repo()))
+    from walter import display_settings as S
+    want = (rest[0] if rest else "status").lower()
+    cur = S.get_theme(DISPLAY_JSON)
+    if want in ("status", "list", "help", "-h", "--help"):
+        showing = S.showing_theme(DISPLAY_JSON)
+        print(f"theme: {cur}" + (f" (showing {showing})" if cur == "auto" else ""))
+        if want != "status":
+            print("themes: " + ", ".join(S.THEMES) + " (midnight = the original look, the default)")
+            print("auto = by season and time: midnight 10 PM-6 AM, else winter Dec-Feb, spring Mar-May,"
+                  " summer Jun-Aug, fall Sep-Nov. A manual pick pauses auto until `theme auto`.")
+            print(THEME_USAGE)
+        return
+    try:
+        if want in ("next", "random"):
+            new, old = S.step_theme(want, DISPLAY_JSON)
+        else:
+            new, old = S.set_theme(want, DISPLAY_JSON)
+    except ValueError:
+        sys.exit(f"walterctl: unknown theme {want!r}. Themes: {', '.join(S.THEMES)} or auto\n{THEME_USAGE}")
+    extra = f", showing {S.showing_theme(DISPLAY_JSON)} now" if new == "auto" else ""
+    print(f"theme: {new} (was {old}{extra}). The face picks it up within ~2 s.")
+
+
+CAL_USAGE = "usage: walterctl display calendar chips | counts | toggle | status"
+
+
+def display_calendar(rest):
+    """Month calendar style (face/calstyle.js reads display.json every 2 s)."""
+    sys.path.insert(0, str(_repo()))
+    from walter import display_settings as S
+    want = (rest[0] if rest else "status").lower()
+    if want in ("status", "help", "-h", "--help"):
+        print(f"calendar style: {S.get_calendar_style(DISPLAY_JSON)} (chips = every event, counts = a tile per calendar)")
+        if want != "status":
+            print(CAL_USAGE)
+        return
+    try:
+        new, old = S.set_calendar_style(want, DISPLAY_JSON)
+    except ValueError:
+        sys.exit(f"walterctl: unknown calendar style {want!r}\n{CAL_USAGE}")
+    print(f"calendar style: {new} (was {old}). The face picks it up within ~2 s.")
+
+
+def display_cmd(rest):
+    """Screen rotation for the kiosk (deploy/kiosk-rotate.sh reads WALTER_ROTATE at cage start)."""
+    if "--face" in rest:
+        return display_for_face(rest)
+    if rest and rest[0] == "text-scale":
+        return display_text_scale(rest[1] if len(rest) > 1 else "status")
+    if rest and rest[0] == "conversation":
+        return display_conversation(rest[1:])
+    if rest and rest[0] == "build":
+        return display_build(rest[1:])
+    if rest and rest[0] in ("wifi", "wi-fi", "internet") and rest[1:2] in (["close"], ["hide"], ["off"]):
+        write_display(wifi_close_seq=int(time.time()))
+        print("wifi panel: closing")
+        return
+    if rest and rest[0] in ("wifi", "wi-fi", "internet"):
+        write_display(wifi_seq=int(time.time()))
+        print("wifi panel: opening on the wall (Esc closes it)")
+        return
+    if rest and rest[0] == "theme":
+        return display_theme(rest[1:])
+    if rest and rest[0] in ("calendar", "calendar-style"):
+        return display_calendar(rest[1:])
+    import shutil
+    from pathlib import Path
+    if rest and rest[0] == "layout":
+        return display_layout(rest[1] if len(rest) > 1 else "status")
+    if rest and rest[0] == "css-rotate":
+        return css_rotate(rest[1] if len(rest) > 1 else "")
+    if "--css" in rest:
+        rest = [a for a in rest if a != "--css"]
+        want = rest[1] if rest and rest[0] == "rotate" and len(rest) > 1 else ROTATIONS.get(rest[0] if rest else "", "")
+        return css_rotate(want)
+    if rest[:1] == ["rotate"] and rest[1:2] and rest[1] in ("portrait", "landscape", "flip", "status"):
+        return display_rotate_live(rest[1])
+    env = Path(KIOSK_ENV)
+    lines = env.read_text().splitlines() if env.exists() else []
+    cur = next((ln.split("=", 1)[1].strip() for ln in lines if ln.startswith("WALTER_ROTATE=")), "0")
+    arg = rest[0] if rest else "status"
+    if arg == "rotate" and len(rest) > 1:
+        want = rest[1]
+    elif arg in ROTATIONS:
+        want = ROTATIONS[arg]
+    elif arg == "status":
+        names = {v: k for k, v in ROTATIONS.items()}
+        print(f"rotation: {cur} ({names.get(cur, 'custom')}), saved in {KIOSK_ENV}")
+        print("wlr-randr: " + ("installed" if shutil.which("wlr-randr") else
+                              "MISSING (sudo apt install wlr-randr), so rotation can't be applied"))
+        print(f"software (css) rotation: {css_rotation()} (walterctl display css-rotate 90|270|0)")
+        display_text_scale("status")
+        print(f"portrait layout: {read_display().get('layout') or 'auto'} (walterctl display layout auto|compact|large)")
+        display_conversation(["status"])
+        display_build(["status"])
+        display_theme(["status"])
+        display_calendar(["status"])
+        return
+    else:
+        sys.exit("usage: walterctl display portrait|portrait-flipped|landscape|rotate 0|90|180|270|status"
+                 " | css-rotate 90|270|0 | layout auto|compact|large | theme list|NAME|auto|next|random"
+                 " | calendar chips|counts|toggle|status")
+    if want not in ("0", "90", "180", "270"):
+        sys.exit("walterctl: rotation must be 0, 90, 180 or 270")
+    lines = [ln for ln in lines if not ln.startswith("WALTER_ROTATE=")]
+    if want != "0":
+        lines.append(f"WALTER_ROTATE={want}")
+    env.parent.mkdir(parents=True, exist_ok=True)
+    if lines:
+        env.write_text("\n".join(lines) + "\n")
+    elif env.exists():
+        env.unlink()
+    print(f"saved: rotate {want} (was {cur}). Applies at the next kiosk start: reboot, or restart the "
+          "kiosk (pkill -x cage; the screen goes dark for a few seconds).")
+    if want != "0" and not shutil.which("wlr-randr"):
+        print("note: wlr-randr is not installed yet: sudo apt install wlr-randr")
+
+
+def display_rotate_live(arg):
+    """walterctl display rotate portrait|landscape|flip|portrait-flipped|landscape-flipped|status: turn the screen NOW (wlr-randr) and save it
+    in kiosk.env (walter/screen_rotate.py, the same helper as the app's Rotate button)."""
+    sys.path.insert(0, str(_repo()))
+    from walter import screen_rotate as R
+    if arg == "status":
+        st = R.current()
+        outs = ", ".join(f"{k} {v}" for k, v in st["outputs"].items()) or "none seen"
+        print(f"screen: {st['orientation']} (outputs: {outs}); saved WALTER_ROTATE={st['saved']}; "
+              f"portrait turns {st['portrait_transform']}")
+        if st["error"]:
+            print(f"note: {st['error']}")
+        return
+    res = R.set_orientation(arg)
+    outs = ", ".join(res.get("applied") or []) or "none"
+    print(f"screen: {res.get('orientation')} (transform {res.get('transform')}) on {outs}; "
+          f"saved WALTER_ROTATE={res.get('saved')}")
+    if res.get("error"):
+        print(f"note: {res['error']}")
+    if not res.get("ok"):
+        sys.exit(1)
+
+
+FACE_SUBS = ("pair", "rename", "room", "kind", "forget", "workspace", "send", "list", "status", "settings")
+FACE_USAGE = ("usage: walterctl faces | walterctl face pair [NAME] [--cancel] | rename OLD NEW | room NAME ROOM"
+              " | kind NAME wall|laptop|tablet|other | forget NAME | workspace NAME WS|none | status"
+              " | send NAME text \"words\" | send NAME card \"Title\" \"Body\" [SECS] | send NAME media"
+              " | send NAME reminder ID | send NAME stop")
+
+
+def _face_store():
+    _repo()
+    from walter import faces as F
+    from walter.config import load
+    try:
+        wall = load().faces.wall_name
+    except Exception:
+        wall = "Walter"
+    return F, F.FaceStore(wall_name=wall)
+
+
+def _face_post(path, body):
+    """POST to the running brain; raises with the brain's own error text."""
+    try:
+        return call_raw("POST", path, body)
+    except urllib.error.HTTPError as e:
+        try:
+            msg = json.loads(e.read() or b"{}").get("error") or e.reason
+        except ValueError:
+            msg = e.reason
+        raise RuntimeError(msg) from None
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"can't reach Walter at {URL} ({e.reason})") from None
+
+
+CLUSTER_USAGE = ("usage: walterctl cluster status | peers | pair [--cancel] | join URL CODE [--url MY_URL]"
+                 " | leave | promote NAME | remove NAME | sync | conflicts | jobs | assign NAME WS|none"
+                 " | discover   (docs/CLUSTER.md)")
+
+
+def cluster_cmd(rest):
+    """Several full installs as one brain (walter/cluster.py, docs/CLUSTER.md). Talks to the
+    running brain on this machine (/api/cluster/local/*), which holds the election state."""
+    _repo()
+    sub, args = (rest[0] if rest else "status"), rest[1:]
+
+    def post(path, body=None):
+        try:
+            return _face_post(path, body or {})
+        except RuntimeError as e:
+            sys.exit(f"walterctl: {e}")
+
+    def ago(t):
+        if not t:
+            return "never"
+        s = int(time.time() - t)
+        return f"{s}s ago" if s < 120 else f"{s // 60} min ago"
+
+    if sub in ("status", "peers"):
+        st = _quiet_call("GET", "/api/cluster/local/status")
+        if st is None:
+            sys.exit("walterctl: Walter isn't running (or is older than the cluster): can't read the cluster state")
+        if "--json" in args:
+            print(json.dumps(st, indent=1))
+            return
+        me = st["me"]
+        if sub == "status":
+            print(f"this install: {me['name']} ({me['id']}), role {st['role']}, priority {me['priority']}, "
+                  f"{me['url']}")
+            if st["role"] != "solo":
+                lead = st["leader"] == me["id"] and "me" or next(
+                    (p["name"] for p in st["peers"] if p["id"] == st["leader"]), st["leader"] or "unknown")
+                print(f"lead: {lead} (term {st['term']}); last sync {ago(st['last_sync'])}; "
+                      f"conflicts logged: {st['conflicts']}")
+        if not st["peers"]:
+            print("no other installs (solo). Add one: walterctl cluster pair here, then "
+                  "walterctl cluster join <this url> <code> on the other install.")
+        for p in st["peers"]:
+            c = p.get("caps") or {}
+            bits = [("LEAD" if p["lead"] else "follower"), ("live" if p["live"] else f"gone ({ago(p.get('last_heard'))})"),
+                    p.get("url") or "?"]
+            if c:
+                bits.append(f"{c.get('cores')} cores, load {c.get('load1')}, {c.get('mem_free_mb')} MB free, "
+                            f"workers {c.get('running')}/{c.get('max_tasks')}"
+                            + (", speech" if c.get("stt") or c.get("tts") else ""))
+            if p.get("walled"):
+                bits.append("walled: " + ", ".join(p["walled"]))
+            print(f"  {p['name']} ({p['id']}): " + "; ".join(bits))
+        return
+    if sub == "pair":
+        if "--cancel" in args:
+            post("/api/cluster/local/pair", {"cancel": True})
+            print("cluster pairing cancelled")
+            return
+        r = post("/api/cluster/local/pair", {})
+        code, mins = r["code"], int(round((r["expires"] - time.time()) / 60))
+        import subprocess
+        show = str(_repo() / "bin" / "walter-show")
+        body = (f"Code: {code[:3]} {code[3:]}\nOn the other Walter install run:\n"
+                f"walterctl cluster join {r['url']} {code}\nGood for {mins} minutes.")
+        subprocess.run([show, "Add a Walter install", body, str(int(r["expires"] - time.time()))])
+        print(f"cluster pairing code {code} (valid {mins} min, single use)")
+        print(f"on the other install: walterctl cluster join {r['url']} {code}")
+        return
+    if sub == "join":
+        my_url = None
+        if "--url" in args:
+            i = args.index("--url")
+            my_url = args[i + 1] if i + 1 < len(args) else None
+            args = args[:i] + args[i + 2:]
+        if len(args) != 2:
+            sys.exit("usage: walterctl cluster join http://<lead-ip>:8765 123456 [--url http://<this-ip>:8765]")
+        r = post("/api/cluster/local/join", {"url": args[0], "code": args[1], "my_url": my_url})
+        print(f"joined: {r['lead'].get('name')} is the lead. This install ({r['me']['name']}) now follows it "
+              "and pulls the shared memory, list and reminders within ~15 s.")
+        print("Anything local that differed is kept in ~/.walter/cluster-conflicts/ (walterctl cluster conflicts).")
+        return
+    if sub == "leave":
+        post("/api/cluster/local/leave", {})
+        print("left the cluster: keys removed, this install is solo again (its files stay as they are)")
+        return
+    if sub in ("promote", "remove") and args:
+        r = post(f"/api/cluster/local/{sub}", {"node": " ".join(args)})
+        print(f"{r.get('name')} is now the lead (term {r.get('term')})" if sub == "promote"
+              else f"removed {r['removed']}: its keys are gone everywhere within a few seconds")
+        return
+    if sub == "sync":
+        r = post("/api/cluster/local/sync", {})
+        if r.get("skipped"):
+            print(f"nothing to do ({r['skipped']})")
+        elif r.get("role") == "lead":
+            print("I'm the lead: " + (f"new versions of {', '.join(r['changed'])}" if r.get("changed")
+                                      else "nothing changed") + "; followers pull within seconds")
+        else:
+            print(f"pushed {', '.join(r.get('pushed') or []) or 'nothing'}; pulled {', '.join(r.get('pulled') or []) or 'nothing'}")
+        return
+    if sub == "conflicts":
+        from walter.cluster import SharedState
+        from walter.config import load
+        cfg = load()
+        log_ = SharedState("", cfg.data_dir, cfg.brain.home).conflict_log(int(args[0]) if args[:1] and args[0].isdigit() else 20)
+        if not log_:
+            print("no conflicts logged")
+        for c in log_:
+            print(f"{dt.datetime.fromtimestamp(c['at']):%a %d %b %I:%M %p}  {c['key']}: {c['why']}"
+                  + (f"\n      other copy: {c['copy']}" if c.get("copy") else ""))
+        return
+    if sub == "jobs":
+        st = _quiet_call("GET", "/api/cluster/local/status") or {}
+        jobs = st.get("jobs") or []
+        if not jobs:
+            print("no jobs sent to other installs")
+        for j in jobs:
+            print(f"{j['id']}  {j['status']:<9} on {j.get('node_name') or j['node']}: {j['title']}"
+                  + (f"\n      {j['activity']}" if j.get("activity") and j["status"] == "running" else "")
+                  + (f"\n      {str(j['result'])[:200]}" if j.get("result") else ""))
+        return
+    if sub == "assign" and len(args) >= 2:
+        st = _quiet_call("GET", "/api/cluster/local/status") or {}
+        if st.get("role") == "follower":
+            sys.exit("walterctl: assign walled workspaces on the lead")
+        from walter.cluster import ClusterStore
+        store = ClusterStore()
+        f = store.find(args[0])
+        if f is None or f.get("self"):
+            sys.exit(f"walterctl: no other install called {args[0]!r} (walterctl cluster peers)")
+        ws = [] if args[1].lower() == "none" else sorted(set(store.walled_for(f["id"])) | {args[1].lower()})
+        store.set_walled(f["id"], ws)
+        print(f"{f['name']}: walled workspaces shared with it: {', '.join(ws) or 'none'}")
+        return
+    if sub == "discover":
+        from walter.cluster import discover
+        found = discover()
+        if not found:
+            print("no installs found by mDNS (needs python zeroconf on both); use the lead's URL to join")
+        for f in found:
+            print(f"{f['name']}: {f['url']}")
+        return
+    sys.exit(CLUSTER_USAGE)
+
+
+def face_cmd(rest):
+    """Faces: one brain, many faces (walter/faces.py, docs/FACES.md)."""
+    F, store = _face_store()
+    sub, args = rest[0], rest[1:]
+    if sub in ("list", "status"):
+        live = _quiet_call("GET", "/api/faces/status") if sub == "list" else None
+        if sub == "status":
+            try:
+                live = call_raw("GET", "/api/faces/status")
+            except Exception as e:
+                sys.exit(f"walterctl: can't reach Walter ({e})")
+        on = {f["id"]: f for f in (live or {}).get("faces", [])}
+        for f in store.list():
+            o = on.get(f["id"], {})
+            seen = ("this machine" if f["id"] == F.WALL_ID else
+                    dt.datetime.fromtimestamp(f.get("last_seen") or 0).strftime("last seen %a %d %b %I:%M %p")
+                    if f.get("last_seen") else "never seen")
+            bits = [f"{f['name']}", f"id {f['id']}", f["kind"]]
+            if f.get("room"):
+                bits.append(f"room {f['room']}")
+            if f.get("default_workspace"):
+                bits.append(f"workspace {f['default_workspace']}")
+            if live is not None and f["id"] != F.WALL_ID:
+                bits.append("online" if o.get("online") else "offline")
+                caps = [c for c in ("ears", "speaker") if o.get(c)] + (["screen"] if o.get("pages") else [])
+                if caps:
+                    bits.append("+".join(caps))
+            if f.get("mic_quality") is not None:
+                bits.append(f"mic {f['mic_quality']:.2f}")
+            print("  ".join(bits) + f"  ({seen})")
+        if store.pairing_open():
+            print("a face pairing code is open right now")
+        if sub == "status" and live and live.get("last_decision"):
+            d = live["last_decision"]
+            print(f"last turn: {d['face']} answered ({'called by name' if d['named'] else 'best mic'}; "
+                  f"heard by {', '.join(d['heard_by'])})")
+        return
+    if sub == "pair":
+        import subprocess
+        show = str(_repo() / "bin" / "walter-show")
+        if args and args[0] in ("--cancel", "cancel", "stop"):
+            store.cancel_pairing()
+            subprocess.run([show, "--clear"])
+            print("face pairing cancelled")
+            return
+        from walter.config import load
+        from walter.dashboard import lan_ip
+        cfg = load()
+        name = " ".join(args).strip()
+        p = store.start_pairing(name)
+        code = p["code"]
+        base = f"http://{lan_ip() or '127.0.0.1'}:{cfg.server.port}"
+        import urllib.parse as up
+        link = f"{base}/face/pair#code={code}" + (f"&name={up.quote(p['name'])}" if p["name"] else "")
+        mins = int(round((p["expires"] - time.time()) / 60))
+        what = f" as {p['name']}" if p["name"] else ""
+        body = (f"Code: {code[:3]} {code[3:]}\nScan this on the new screen to add it{what}, or run "
+                f"walter-face pair {base} {code} on a laptop. Good for {mins} minutes.")
+        subprocess.run([show, "--qr", link, "Add a face", body, str(int(p["expires"] - time.time()))])
+        print(f"face pairing code {code} (valid {mins} min, single use), shown on my face with a QR code")
+        print(f"tablet/browser: {link}")
+        print(f"laptop with a mic/speaker: walter-face pair {base} {code}" + (f" --name {p['name']!r}" if p["name"] else ""))
+        return
+    try:
+        if sub == "rename" and len(args) >= 2:
+            f = store.rename(args[0], " ".join(args[1:]))
+            print(f"renamed: {f['name']} (id {f['id']}). Say \"Hey {f['name']}\" to talk to that face.")
+        elif sub == "room" and len(args) >= 1:
+            f = store.set_room(args[0], " ".join(args[1:]))
+            print(f"{f['name']}: room {f['room'] or '(none)'}")
+        elif sub == "kind" and len(args) == 2:
+            f = store.set_kind(args[0], args[1])
+            print(f"{f['name']}: kind {f['kind']}")
+        elif sub == "workspace" and len(args) >= 2:
+            f = store.set_workspace(args[0], " ".join(args[1:]))
+            print(f"{f['name']}: default workspace {f['default_workspace'] or '(none)'}")
+        elif sub == "forget" and args:
+            gone = store.forget(" ".join(args))
+            if not gone:
+                sys.exit(f"walterctl: no paired face called '{' '.join(args)}' (the wall can't be forgotten)")
+            _quiet_call("POST", "/api/faces/changed")
+            print("forgot: " + ", ".join(gone) + " (it has to pair again)")
+        elif sub == "settings" and args:
+            f = store.get(args[0])
+            if f is None:
+                raise KeyError(args[0])
+            print(json.dumps({"face": f, "display": _face_display(f["id"])}, indent=1))
+        elif sub == "send" and len(args) >= 2:
+            face_send(store, args)
+        else:
+            sys.exit(FACE_USAGE)
+    except KeyError as e:
+        sys.exit(f"walterctl: no face called {e.args[0]!r} (walterctl faces)")
+    except ValueError as e:
+        sys.exit(f"walterctl: {e}")
+
+
+def _face_display(face_id):
+    from walter import display_settings as S
+    return S.read_display(S.face_display_path(face_id))
+
+
+def face_send(store, args):
+    name, kind, more = args[0], args[1], args[2:]
+    if store.get(name) is None:
+        raise KeyError(name)
+    try:
+        if kind == "text":
+            if not more:
+                sys.exit('usage: walterctl face send NAME text "words"')
+            r = _face_post("/api/faces/send", {"face": name, "kind": "text", "text": " ".join(more)})
+            print(f"{'said' if r.get('spoken') else 'shown'} on {r['face']}" + (f" ({r['note']})" if r.get("note") else ""))
+        elif kind == "card":
+            if not more:
+                sys.exit('usage: walterctl face send NAME card "Title" "Body" [SECONDS]')
+            secs = int(more[2]) if len(more) > 2 and more[2].isdigit() else 120
+            r = _face_post("/api/faces/send", {"face": name, "kind": "card", "title": more[0],
+                                               "body": more[1] if len(more) > 1 else "", "seconds": secs})
+            print(f"card on {r['face']} for {secs} s")
+        elif kind == "media":
+            from walter.facehandoff import handoff_media
+            ok, msg = handoff_media(name, _face_post)
+            print(msg) if ok else sys.exit(f"walterctl: {msg}")
+        elif kind in ("reminder", "timer"):
+            if not more or not more[0].lstrip("#").isdigit():
+                sys.exit("usage: walterctl face send NAME reminder ID (walterctl reminders)")
+            r = _face_post("/api/faces/send", {"face": name, "kind": "reminder", "id": int(more[0].lstrip("#"))})
+            print(f"reminder #{r['id']} will go off on {r['face']}")
+        elif kind == "stop":
+            r = _face_post("/api/faces/send", {"face": name, "kind": "stop"})
+            print(f"stopped {r['face']}")
+        else:
+            sys.exit(FACE_USAGE)
+    except RuntimeError as e:
+        sys.exit(f"walterctl: {e}")
+
+
+def display_for_face(rest):
+    """walterctl display ... --face NAME: the same commands, on that face's own face/display-<id>.json."""
+    global DISPLAY_JSON
+    i = rest.index("--face")
+    if i + 1 >= len(rest):
+        sys.exit("usage: walterctl display ... --face NAME")
+    ref, rest = rest[i + 1], rest[:i] + rest[i + 2:]
+    F, store = _face_store()
+    f = store.get(ref)
+    if f is None:
+        sys.exit(f"walterctl: no face called {ref!r} (walterctl faces)")
+    from walter import display_settings as S
+    if f["id"] != F.WALL_ID:
+        DISPLAY_JSON = str(S.face_display_path(f["id"]))
+        if rest and (rest[0] in ROTATIONS or rest[0] == "rotate"):
+            want = rest[1] if rest[0] == "rotate" and len(rest) > 1 else ROTATIONS.get(rest[0], "0")
+            rest = ["css-rotate", {"180": "0"}.get(want, want)]   # a face turns its page, not a kiosk
+        if not rest or rest[0] == "status":
+            print(f"face {f['name']} ({DISPLAY_JSON}):")
+            display_text_scale("status")
+            print(f"portrait layout: {read_display().get('layout') or 'auto'}")
+            display_theme(["status"])
+            display_calendar(["status"])
+            print(f"software rotation: {css_rotation()}")
+            return
+    print(f"[{f['name']}] ", end="")
+    return display_cmd(rest)
+
+
+def chat_cmd(rest):
+    """walterctl chat log [N] | search WORDS: the full chat history (walter/chatlog.py)."""
+    import datetime as _dt
+    sys.path.insert(0, str(_repo()))
+    from walter.chatlog import ChatLog
+    sub = rest[0] if rest else "log"
+    if sub == "log" and len(rest) <= 2:
+        n = rest[1] if len(rest) > 1 else "20"
+        if not n.isdigit() or not 0 < int(n) <= 500:
+            sys.exit("usage: walterctl chat log [N]   (N = 1..500)")
+        items, more = ChatLog().page(limit=int(n))["items"], False
+    elif sub == "search" and len(rest) > 1:
+        res = ChatLog().page(limit=50, q=" ".join(rest[1:]))
+        items, more = res["items"], res["has_more"]
+    else:
+        sys.exit("usage: walterctl chat log [N] | chat search WORDS")
+    if not items:
+        print("(nothing found)" if sub == "search" else "(no chat history yet)")
+        return
+    for r in reversed(items):
+        when = _dt.datetime.fromtimestamp(r["ts"]).strftime("%a %d %b %-I:%M %p")
+        who = "Walter" if r["role"] == "walter" else "Person"
+        src = "" if r.get("source") in ("wall", "") else f" ({r['source']})"
+        print(f"#{r['id']} {when} {who}{src}: {r['text']}")
+    if more:
+        print("(more matches; showing the newest 50)")
+
+
+def cmd_wall(rest):
+    """walterctl wall [--json]: what the wall face itself says it is showing (face/wallstate.js)."""
+    try:
+        d = call_raw("GET", "/api/wall/state", timeout=5)
+    except urllib.error.HTTPError as e:
+        sys.exit("walterctl: the wall report needs one restart to enable" if e.code == 404 else f"walterctl: {e.code}")
+    except urllib.error.URLError as e:
+        sys.exit(f"walterctl: can't reach Walter at {URL} ({e})")
+    if "--json" in rest:
+        print(json.dumps(d, indent=2))
+        return
+    if not d.get("reported"):
+        print("wall: no report yet (is the face page open?)")
+        return
+    b, c, f = d.get("build") or {}, d.get("conversation") or {}, d.get("focus") or {}
+    head = f"wall: {d.get('mode')}" + (f"  (NOT RESPONDING, last report {d.get('age')} s ago)" if d.get("stale")
+                                       else f"  (updated {d.get('age')} s ago)")
+    print(head)
+    print(f"  build: {'on' if b.get('on') else 'off'}" + (f", phase {b.get('phase')}, zoom {b.get('zoom') or '-'}"
+                                                        f"{', plan set' if b.get('plan') else ''}" if b.get("on") else ""))
+    print(f"  conversation: {'on (' + str(c.get('view')) + ')' if c.get('on') else 'off'}"
+          f"   focus: {'on' if f.get('on') else 'off'}")
+    print(f"  theme: {d.get('theme') or '-'}{' (auto)' if d.get('theme_auto') else ''}   layout: {d.get('layout')}"
+          f" (setting {d.get('layout_pref')})   screen: {d.get('orientation')}")
+    print(f"  workspace: {d.get('workspace') or '-'}   asleep: {d.get('asleep')}   muted: {d.get('muted')}"
+          f"   demo: {d.get('demo')}   canvas: {d.get('canvas')}   browser: {d.get('browser')}")
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(__doc__.strip())
+        return
+    cmd, rest = argv[0], argv[1:]
+    text = " ".join(rest)
+    if cmd == "say":
+        call("POST", "/api/say", {"text": text})
+    elif cmd == "ask":
+        call("POST", "/api/ask", {"text": text})
+    elif cmd == "face" and rest and rest[0] in FACE_SUBS:
+        face_cmd(rest)
+    elif cmd == "faces":
+        face_cmd(["list"] + rest)
+    elif cmd == "hands":
+        _repo()
+        from walter import hands_cli   # laptop hands (docs/HANDS.md)
+        sys.exit(hands_cli.main(rest, URL))
+    elif cmd == "face":
+        call("POST", "/api/face", {"emotion": rest[0]})
+    elif cmd == "action":
+        call("POST", "/api/face", {"action": rest[0]})
+    elif cmd == "remind":
+        if len(rest) < 2:
+            sys.exit('usage: walterctl remind <when> "<text>"')
+        due = parse_when(rest[0])
+        r = call("POST", "/api/remind", {"due": due, "text": " ".join(rest[1:])})
+        print(f"#{r['id']} at {dt.datetime.fromtimestamp(due):%a %H:%M}: {r['text']}")
+        _flash("Reminder set", f"{_when12(due)}: {r['text']}")
+    elif cmd == "later":
+        if len(rest) < 2:
+            sys.exit('usage: walterctl later <when> "<instruction>"')
+        due = parse_when(rest[0])
+        r = call("POST", "/api/remind", {"due": due, "text": " ".join(rest[1:]), "kind": "do"})
+        print(f"#{r['id']} at {dt.datetime.fromtimestamp(due):%a %H:%M}: {r['text']}")
+    elif cmd == "every":
+        if len(rest) < 3 or not re.fullmatch(r"\d{1,2}:\d{2}", rest[1]):
+            sys.exit('usage: walterctl every <daily|weekdays|weekends|mon,wed> <HH:MM> "<instruction>"')
+        r = call("POST", "/api/remind", {"text": " ".join(rest[2:]), "kind": "do",
+                                         "repeat": {"days": parse_days(rest[0]), "time": rest[1]}})
+        print(f"#{r['id']} {rest[0]} at {rest[1]}, next {dt.datetime.fromtimestamp(r['due']):%a %d %b %H:%M}: {r['text']}")
+    elif cmd == "reminders":
+        for r in call("GET", "/api/reminders"):
+            rep = r.get("repeat")
+            when = (",".join(DAYS[d] for d in rep["days"]) + " " + rep["time"]) if rep else \
+                f"{dt.datetime.fromtimestamp(r['due']):%a %d %b %H:%M}"
+            kind = "do" if r.get("kind") == "do" else "remind"
+            paused = "  (paused)" if r.get("enabled") is False else ""
+            print(f"#{r['id']}  [{kind}]  {when}{paused}  {r['text']}")
+    elif cmd in ("pause", "resume"):
+        if len(rest) != 1 or not rest[0].lstrip("#").isdigit():
+            sys.exit(f"usage: walterctl {cmd} <routine id> (walterctl reminders)")
+        r = call("POST", f"/api/reminders/{int(rest[0].lstrip('#'))}", {"enabled": cmd == "resume"})
+        print(f"#{r['id']} {'paused' if cmd == 'pause' else 'running again'}: {r['text'][:80]}")
+    elif cmd == "task":
+        ws_name, on, args = None, None, []
+        it = iter(rest)
+        for a in it:
+            if a == "--on":
+                on = next(it, None)
+            elif a.startswith("--on="):
+                on = a.split("=", 1)[1]
+            elif a in ("--workspace", "-w"):
+                ws_name = next(it, None)
+            elif a.startswith("--workspace="):
+                ws_name = a.split("=", 1)[1]
+            else:
+                args.append(a)
+        rest = args
+        if not rest:
+            sys.exit('usage: walterctl task [--workspace NAME] "title" "instructions"')
+        title, prompt = (rest[0], " ".join(rest[1:])) if len(rest) > 1 else (rest[0][:60], rest[0])
+        body = {"title": title, "prompt": prompt}
+        wst, wid = _task_workspace(ws_name)
+        if wid:   # tag it and put the workspace's repos + privacy rule in front of the brief
+            body = {"title": title, "prompt": wst.brief(wid) + prompt, "workspace": wid}
+        if on:
+            body["on"] = on   # another install in the cluster (docs/CLUSTER.md)
+        r = call("POST", "/api/tasks", body)
+        if wid and isinstance(r.get("id"), int):
+            wst.tag_task(r["id"], wid)
+        where = f" on {r['node_name']}" if r.get("node_name") else ""
+        tid = r["id"] if isinstance(r.get("id"), int) else r.get("id")
+        print(f"task #{tid} started{where}: {r['title']}" + (f" [{wid}]" if wid else "")
+              + (f" ({r['note']})" if r.get("note") else ""))
+    elif cmd == "tasks" and rest[:1] == ["--live"]:
+        # what each worker is doing right now (from its live transcript; no restart needed)
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+        from walter.workerlive import Snapshotter
+        snap = Snapshotter().snapshot()
+        if "--json" in rest:
+            print(json.dumps(snap, indent=1))
+        elif not snap["workers"]:
+            print("no workers running, queued or just finished")
+        for w in ([] if "--json" in rest else snap["workers"]):
+            el = f"{w['elapsed'] // 60}m{w['elapsed'] % 60:02d}s" if w["status"] != "queued" else ""
+            files = f", {w['files']} file(s) edited" if w["files"] else ""
+            print(f"#{w['id'] or '-'}  {w['status']:<9} {el:>7}  {w['title']}")
+            print(f"      {w['activity']}{files}")
+    elif cmd == "tasks" and rest[:1] == ["--priority"]:
+        # running walter-task-N units (and walter.service for comparison): CPUWeight, IOWeight, Nice
+        import subprocess
+        units = subprocess.run(["systemctl", "--user", "list-units", "--plain", "--no-legend",
+                                "--state=active", "walter-task-*.service"],
+                               capture_output=True, text=True).stdout.split()
+        units = [u for u in units if u.startswith("walter-task-")]
+        for u in ["walter.service", "walter-workers-live.service"] + units:
+            out = subprocess.run(["systemctl", "--user", "show", u, "-p", "CPUWeight", "-p", "IOWeight",
+                                  "-p", "Nice", "-p", "ActiveState"], capture_output=True, text=True).stdout
+            p = dict(l.split("=", 1) for l in out.splitlines() if "=" in l)
+            w = lambda k: "default" if p.get(k, "") in ("", "[not set]") else p[k]
+            print(f"{u:<30} {p.get('ActiveState', '?'):<9} cpu={w('CPUWeight'):<8} io={w('IOWeight'):<8} "
+                  f"nice={p.get('Nice', '?')}")
+        if not units:
+            print("no workers running (new ones start at [brain] worker_cpu_weight/io_weight/nice)")
+    elif cmd in ("present", "presentation"):
+        present_cmd(rest)
+    elif cmd == "restart-check":
+        restart_check_cmd(rest)
+    elif cmd == "board":
+        board_cmd(rest)
+    elif cmd == "tasks":
+        wst, _ = _task_workspace(None, quiet=True)
+        for r in call("GET", "/api/tasks"):
+            tag = (wst.task_workspace(r) or "-") if wst else ""
+            print(f"#{r['id']}  {r['status']:<9} {dt.datetime.fromtimestamp(r['started']):%a %H:%M}  "
+                  + (f"[{tag}] " if wst else "") + r["title"])
+            if r.get("result") and r["status"] != "running":
+                print("      " + r["result"][:200].replace("\n", " "))
+    elif cmd == "cancel-task":
+        print(call("DELETE", f"/api/tasks/{int(rest[0])}"))
+    elif cmd == "cancel":
+        print(call("DELETE", f"/api/reminders/{int(rest[0])}"))
+    elif cmd == "stop":
+        call("POST", "/api/stop")
+    elif cmd == "sleep":
+        call("POST", "/api/sleep")
+        print("going to sleep (Space wakes me)")
+    elif cmd == "volume":
+        import subprocess
+        here = os.path.dirname(os.path.realpath(__file__))
+        subprocess.run([os.path.join(here, "walter-volume"), *rest])
+    elif cmd in ("mute", "unmute"):
+        arg = rest[0].lower() if rest else ""
+        if cmd == "unmute" or arg in ("off", "0", "false", "no"):
+            data = {"on": False}
+        elif arg == "toggle":
+            data = {}
+        elif arg in ("", "on", "1", "true", "yes"):
+            data = {"on": True}
+        else:
+            sys.exit("usage: walterctl mute [on|off|toggle] | walterctl unmute")
+        r = call("POST", "/api/mute", data)
+        print("microphone muted" if r["muted"] else "microphone on")
+    elif cmd == "camera" and rest and rest[0] == "debug":
+        on = len(rest) < 2 or rest[1] in ("on", "1", "true", "yes")
+        r = call("POST", "/api/camera", {"debug": on})
+        print("camera debug log " + ("on (see journalctl --user -u walter | grep 'camera debug')"
+                                     if r.get("debug") else "off"))
+    elif cmd == "camera":
+        on = None if not rest else rest[0] in ("on", "1", "true", "yes")
+        r = call("POST", "/api/camera", {} if on is None else {"on": on})
+        print("camera on" if r.get("camera") else "camera off")
+    elif cmd == "captions":
+        on = None if not rest else rest[0] in ("on", "1", "true", "yes")
+        print(call("POST", "/api/captions", {} if on is None else {"on": on}))
+    elif cmd == "enroll":
+        if len(rest) < 2 or rest[0] not in ("face", "voice"):
+            sys.exit("usage: walterctl enroll face|voice NAME")
+        r = call("POST", "/api/enroll", {"kind": rest[0], "name": " ".join(rest[1:])}, timeout=150)
+        if r.get("ok"):
+            print(f"enrolled {r['name']}'s {r['kind']}: {r['samples']} samples, match threshold "
+                  f"{r['threshold']:.2f} (own samples agree at {r.get('own_median', 0):.2f} typical, "
+                  f"{r.get('own_p5', 0):.2f} worst 5%)")
+        else:
+            sys.exit(f"enrolment failed: {r.get('error')}")
+    elif cmd == "people":
+        r = call("GET", "/api/people")
+        print(f"face recognition {'on' if r.get('recognise_faces') else 'off'}, "
+              f"voice recognition {'on' if r.get('recognise_voices') else 'off'}"
+              + (f"; stored in {r['store']}" if r.get("store") else ""))
+        if not r["people"]:
+            print("nobody enrolled")
+        for p in r["people"]:
+            bits = []
+            for k in ("face", "voice"):
+                i = p.get(k)
+                bits.append(f"{k}: {i['samples']} embeddings, threshold {i.get('threshold', 0):.2f}, "
+                            f"enrolled {i.get('enrolled', '?')}" if i else f"{k}: -")
+            print(f"{p['name']}\n  " + "\n  ".join(bits))
+    elif cmd == "forget":
+        if not rest:
+            sys.exit("usage: walterctl forget NAME [face|voice]")
+        kind = rest[-1] if len(rest) > 1 and rest[-1] in ("face", "voice") else None
+        name = " ".join(rest[:-1] if kind else rest)
+        import urllib.parse
+        q = f"?kind={kind}" if kind else ""
+        r = call("DELETE", f"/api/people/{urllib.parse.quote(name)}{q}")
+        print(f"forgot {name}'s {' and '.join(r['removed'])}" if r["removed"] else f"nothing stored for {name}"
+              + (f" ({kind})" if kind else ""))
+    elif cmd == "diagnostics":
+        sys.path.insert(0, str(_repo()))
+        from walter import diagnostics
+        sys.exit(diagnostics.main(rest))
+    elif cmd == "reload-face":
+        call("POST", "/api/reload-face")
+    elif cmd == "brain":
+        mode = rest[0] if rest else "status"
+        if mode == "status":
+            r = call("GET", "/api/brain")
+        elif mode in ("fast", "deep", "auto"):
+            r = call("POST", "/api/brain", {"mode": mode})
+        else:
+            sys.exit("usage: walterctl brain [fast|deep|auto|status]")
+        last = r.get("last_decision") or {}
+        print(f"mode {r['mode']} (auto switch {'on' if r['auto_switch'] else 'off in config'}); "
+              f"now on {r['model']}; fast = {r['fast_model']}, deep = {r['deep_model']}")
+        if last:
+            print(f"last turn: {'deep' if last['deep'] else 'fast'} ({last['reason']})")
+        if r.get("last_switch_s") is not None:
+            print(f"{r['switches']} switches, last took {r['last_switch_s']:.2f} s")
+    elif cmd == "voice":
+        speech_cmd("tts", rest[0].lower() if rest else "")
+    elif cmd == "ears":
+        speech_cmd("stt", rest[0].lower() if rest else "")
+    elif cmd == "mode":
+        mode_cmd(rest[0].lower() if rest else "")
+    elif cmd == "speech":
+        if rest and rest[0] != "status":
+            sys.exit("usage: walterctl speech status")
+        speech_cmd("tts", "status")
+    elif cmd in ("dash", "dashboard"):
+        from pathlib import Path
+        tool = Path(__file__).resolve().parent / "walter-dashboard"
+        os.execv(str(tool), [str(tool), *rest])
+    elif cmd in ("pair", "devices", "revoke", "revoke-all", "app-bump"):
+        app_cmd(cmd, rest)
+    elif cmd == "security":
+        security_cmd(rest)
+    elif cmd == "away":
+        away_cmd(rest)
+    elif cmd == "loop":
+        loop_cmd(rest)
+    elif cmd == "cluster":
+        cluster_cmd(rest)
+    elif cmd in ("workspace", "workspaces", "ws"):
+        workspace_cmd(rest)
+    elif cmd == "focus":
+        focus_cmd(rest)
+    elif cmd == "review":
+        review_cmd(rest)
+    elif cmd == "chat":
+        chat_cmd(rest)
+    elif cmd == "config":
+        config_cmd(rest)
+    elif cmd == "google":
+        google_cmd(rest)
+    elif cmd == "school":
+        school_cmd(rest)
+    elif cmd == "display":
+        display_cmd(rest)
+    elif cmd == "test":
+        test_cmd(rest)
+    elif cmd == "test-summary":
+        test_summary_cmd(rest)
+    elif cmd == "media":
+        _repo()
+        from walter import media
+        sys.exit(media.cli(rest))
+    elif cmd in ("ha", "homeassistant"):
+        _repo()
+        from walter import homeassistant
+        sys.exit(homeassistant.cli(rest))
+    elif cmd == "radio":
+        _repo()
+        from walter import radio
+        sys.exit(radio.cli(rest))
+    elif cmd == "spotify":
+        _repo()
+        from walter import spotify
+        sys.exit(spotify.cli(rest))
+    elif cmd in ("podcast", "podcasts"):
+        _repo()
+        from walter import podcast
+        sys.exit(podcast.cli(rest))
+    elif cmd in ("youtube", "yt"):
+        _repo()
+        from walter import youtube
+        sys.exit(youtube.cli(rest))
+    elif cmd == "new-session":
+        call("POST", "/api/new-session")
+    elif cmd == "update" and rest and rest[0] in ("status", "rollback"):
+        sys.exit(_update_releases(rest))
+    elif cmd == "update":
+        import subprocess
+        r = subprocess.run(["sudo", "-n", "/usr/bin/systemctl", "start", "--no-block", "walter-update.service"])
+        print("update started; it restarts Walter if there's a new version (log: /var/log/walter-update.log)"
+              if r.returncode == 0 else "walterctl: couldn't start the updater")
+    elif cmd == "wall":
+        cmd_wall(rest)
+    elif cmd == "status":
+        print(json.dumps(call("GET", "/api/status"), indent=2))
+    else:
+        sys.exit(f"walterctl: unknown command '{cmd}' (see walterctl --help)")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

@@ -1,0 +1,11 @@
+[Unit]
+Description=Walter: live CPU and memory for the build cockpit (face/dashboard-gauges.json)
+
+[Service]
+ExecStart=@REPO@/bin/walter-gauges-live
+Restart=always
+RestartSec=5
+Nice=10
+
+[Install]
+WantedBy=default.target

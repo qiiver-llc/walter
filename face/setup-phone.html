@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wake up Walter</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         background: #05060a; color: #e8eefc; line-height: 1.45; }
+  main { max-width: 520px; margin: 0 auto; padding: 28px 20px 60px; }
+  .blob { width: 76px; height: 70px; margin: 8px auto 18px; border-radius: 50% 50% 46% 46%;
+          background: radial-gradient(circle at 35% 30%, #c9ecff, #58c4ff 55%, #2a7fb8);
+          box-shadow: 0 0 40px #58c4ff88; position: relative; }
+  .blob::before, .blob::after { content: ""; position: absolute; top: 24px; width: 12px; height: 19px;
+          border-radius: 6px; background: #101424; }
+  .blob::before { left: 22px; } .blob::after { right: 22px; }
+  h1 { font-size: 1.5rem; text-align: center; margin: 0 0 6px; }
+  p.sub { text-align: center; color: #9fb0d0; margin: 0 0 26px; }
+  .step { background: #0d111b; border: 1px solid #1d2638; border-radius: 16px; padding: 18px; margin-bottom: 14px; }
+  .step h2 { font-size: 1rem; margin: 0 0 8px; }
+  .step p { margin: 0 0 12px; color: #b9c6e0; font-size: .95rem; }
+  .n { display: inline-block; width: 24px; height: 24px; border-radius: 12px; background: #58c4ff; color: #05060a;
+       text-align: center; font-weight: 700; font-size: .85rem; line-height: 24px; margin-right: 8px; }
+  button, .btn { display: block; width: 100%; box-sizing: border-box; padding: 14px; border: 0; border-radius: 12px;
+         background: #58c4ff; color: #05060a; font-size: 1rem; font-weight: 650; text-align: center; text-decoration: none; }
+  button:disabled { opacity: .5; }
+  input, textarea { width: 100%; box-sizing: border-box; padding: 12px; border-radius: 10px; border: 1px solid #2a3550;
+         background: #070a12; color: #fff; font-size: 1rem; margin-bottom: 10px; font-family: inherit; }
+  textarea { height: 84px; resize: vertical; font-family: ui-monospace, monospace; font-size: .85rem; }
+  .msg { margin-top: 10px; font-size: .95rem; min-height: 1.2em; }
+  .err { color: #ff8a8a; } .ok { color: #8affc1; }
+  details { color: #9fb0d0; font-size: .9rem; margin-top: 4px; }
+  label.check { display: flex; gap: 10px; align-items: flex-start; margin-top: 10px; color: #e8eefc; font-weight: 600; }
+  label.check input { width: 22px; height: 22px; margin: 2px 0 0; flex: none; }
+  .promise { text-align: center; color: #8affc1; font-size: .92rem; margin: 0 0 16px; }
+  .done { text-align: center; font-size: 1.15rem; display: none; }
+</style>
+</head>
+<body>
+<main>
+  <div class="blob"></div>
+  <h1>Hi, I'm Walter!</h1>
+  <p class="sub">Let's wake up my brain. This takes about a minute.</p>
+
+  <div id="steps">
+    <p class="promise" id="promise">Walter uses your own Claude account or API key; Walter never sees your Claude password or login code.</p>
+    <div class="step">
+      <h2><span class="n">1</span>Sign in to Claude on Walter's screen</h2>
+      <p>Plug a keyboard (and mouse) into Walter, then tap below. Claude's own sign-in window opens on
+        Walter's screen: sign in there on Anthropic's page with your own Claude account. If Claude
+        asks for a code, type it into that window, not here.</p>
+      <button id="signin">Open Claude sign-in on Walter's screen</button>
+      <div class="msg" id="signinMsg"></div>
+      <details>
+        <summary>No keyboard for Walter?</summary>
+        <p style="margin-top:8px">From your own computer, connect to the Walter computer
+          (<code>ssh walter@walter.local</code>) and run <code>claude auth login</code>, then press Verify.
+          Or use your own API key below.</p>
+      </details>
+      <details>
+        <summary>Or use my own Anthropic API key</summary>
+        <p style="margin-top:8px">Your own key from the Anthropic Console (starts with <code>sk-ant-api</code>).
+          Usage is billed to <b>your</b> Anthropic account. It's stored only on Walter (readable by Walter's
+          user alone) and given to Claude Code, never shown, spoken or logged.</p>
+        <input id="apikey" type="password" placeholder="sk-ant-api…" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <button id="savekey">Save my API key</button>
+        <div class="msg" id="keyMsg"></div>
+      </details>
+    </div>
+
+    <div class="step">
+      <h2><span class="n">2</span>Verify and wake Walter up</h2>
+      <p>Walter asks Claude Code whether it's signed in. Nothing else.</p>
+      <details>
+        <summary>Optional: admin password for the laptop</summary>
+        <p style="margin-top:8px">Lets you log in to the laptop (user <b>walter</b>, e.g. over SSH at
+          <code>walter.local</code>) to fix things. Leave empty to skip; you can't set it later from here.</p>
+        <input id="pw" type="password" placeholder="Admin password (8+ characters)" autocomplete="new-password">
+      </details>
+      <details>
+        <summary>Optional: give Walter full admin rights</summary>
+        <label class="check"><input id="fulladmin" type="checkbox">
+          <span>Give Walter full admin rights on this computer (passwordless sudo)</span></label>
+        <p style="margin-top:8px">Walter can then install software, change system settings and fix the
+          laptop himself, without asking for a password. The catch: Walter reads web pages and email, so a
+          malicious page or message could try to trick him into doing something harmful, and with admin
+          rights the damage isn't limited to his own files. Only tick this on a laptop used just for Walter,
+          keep backups of anything that matters, and know you can take it back at any time by deleting
+          <code>/etc/sudoers.d/90-walter</code>. Off unless you tick it, and only offered now.</p>
+      </details>
+      <div style="height:10px"></div>
+      <button id="go">Verify and wake Walter up</button>
+      <div class="msg" id="goMsg"></div>
+    </div>
+  </div>
+
+  <div class="done" id="done">
+    <div class="step"><h2>Walter is awake! 🎉</h2><p>Look at the screen and say “Hey Walter”.</p></div>
+  </div>
+</main>
+<script>
+const K = "{{KEY}}";
+const $ = (id) => document.getElementById(id);
+async function api(action, body = {}) {
+  const r = await fetch("/setup/api/" + action, { method: "POST", headers: { "Content-Type": "application/json" },
+                                                  body: JSON.stringify({ k: K, ...body }) });
+  if (!r.ok) throw new Error(r.status === 403 ? "This page has expired. Scan the QR code on Walter again." : "Error " + r.status);
+  return r.json();
+}
+function say(el, text, cls) { el.textContent = text; el.className = "msg " + (cls || ""); }
+
+// Tell Walter which time zone we're in (from the phone's own settings).
+try { api("tz", { tz: Intl.DateTimeFormat().resolvedOptions().timeZone }); } catch (e) {}
+
+$("signin").onclick = async () => {
+  $("signin").disabled = true;
+  say($("signinMsg"), "Opening Claude's sign-in on Walter's screen…");
+  try {
+    const r = await api("signin");
+    say($("signinMsg"), r.message, r.ok ? "ok" : "err");
+  } catch (e) {
+    say($("signinMsg"), e.message, "err");
+  } finally { $("signin").disabled = false; }
+};
+
+$("savekey").onclick = async () => {
+  const key = $("apikey").value.trim();
+  $("savekey").disabled = true;
+  say($("keyMsg"), "Checking…");
+  try {
+    const r = await api("apikey", { key });
+    $("apikey").value = "";
+    say($("keyMsg"), r.message, r.ok ? "ok" : "err");
+  } catch (e) {
+    say($("keyMsg"), e.message, "err");
+  } finally { $("savekey").disabled = false; }
+};
+
+$("go").onclick = async () => {
+  const pw = $("pw").value, fullAdmin = $("fulladmin").checked;
+  if (pw && pw.length < 8) return say($("goMsg"), "The admin password needs at least 8 characters.", "err");
+  $("go").disabled = true;
+  say($("goMsg"), "Asking Claude Code…");
+  try {
+    const r = await api("verify", { admin_password: pw, full_admin: fullAdmin });
+    if (!r.ok) throw new Error(r.message);
+    $("steps").style.display = "none";
+    $("done").style.display = "block";
+  } catch (e) {
+    say($("goMsg"), e.message, "err");
+  } finally { $("go").disabled = false; }
+};
+</script>
+</body>
+</html>

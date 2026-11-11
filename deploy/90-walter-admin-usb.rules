@@ -1,0 +1,3 @@
+# Walter: a USB stick with walter-admin.txt, plugged in by hand, can grant or
+# revoke Walter's admin rights (physical presence). See docs/admin-access.md.
+ACTION=="add", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", ENV{ID_FS_TYPE}=="vfat|exfat", TAG+="systemd", ENV{SYSTEMD_WANTS}+="walter-admin-usb@%k.service"

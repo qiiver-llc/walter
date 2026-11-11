@@ -1,0 +1,58 @@
+name: Desktop face builds
+
+# Builds the Walter desktop face for Linux, macOS and Windows on desktop-v* tags only
+# (never on ordinary pushes). Artifacts are uploaded to the workflow run; nothing is
+# published or released. Mac and Windows builds are unsigned (see docs/DESKTOP.md).
+
+on:
+  push:
+    tags: ["desktop-v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install aiohttp numpy qrcode pytest
+      - run: python -m pytest -q tests/test_desktop.py tests/test_hands.py tests/test_hands_server.py
+
+  linux-tarball:
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - run: tools/release/make-desktop.sh --no-sign --out dist/desktop
+      - uses: actions/upload-artifact@v4
+        with: { name: walter-desktop-linux-tarball, path: dist/desktop/ }
+
+  pyinstaller:
+    needs: tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install pyinstaller pystray pillow sounddevice numpy zeroconf
+      - run: pyinstaller --noconfirm desktop/walter-desktop.spec
+      - run: dist/walter-desktop/walter-desktop --help
+        shell: bash
+      - if: runner.os == 'macOS'
+        run: bash scripts/desktop/macos/build-pkg.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: walter-desktop-${{ runner.os }}
+          path: |
+            dist/walter-desktop/
+            dist/*.pkg

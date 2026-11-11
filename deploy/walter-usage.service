@@ -1,0 +1,6 @@
+[Unit]
+Description=Walter: fetch Claude plan usage for the face
+
+[Service]
+Type=oneshot
+ExecStart=/home/walter/walter/bin/claude-usage

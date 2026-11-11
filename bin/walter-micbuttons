@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""walter-micbuttons: the JLab GO Talk USB mic's buttons -> Walter.
+
+The mic (C-Media, USB 0d8c:0030) has a HID interface whose report descriptor
+declares Report ID 1 with Consumer Volume+ (bit 0), Volume- (bit 1), Mute (bit 2,
+"relative" = a press pulse), 9 vendor bits, play/pause/stop/next/prev and 13
+vendor bytes; plus a 15-byte vendor Output report (no LED usage declared).
+Its sister chips (HS-100B, kernel hid-cmedia) send mute in the UNDECLARED bit 4,
+so we watch every bit, not just the declared ones.
+
+What it does:
+  * reads /dev/hidrawN for that mic (found by USB id, survives replugging),
+    and also polls GET_REPORT(input) a few times a second, in case the chip
+    only exposes button state that way;
+  * logs every change of the raw report to ~/.walter/logs/micbuttons.log
+    (so a live button test documents itself);
+  * Volume+ / Volume- -> `walterctl volume up|down`;
+  * Mute (bit 2, or bit 4 like the HS-100B) -> `walterctl mute toggle`.
+  The LED is not driven: no LED usage exists and writing unknown vendor output
+  reports could change the chip's EEPROM.
+
+Needs read access to the hidraw node: /etc/udev/rules.d/70-walter-jlab-mic.rules.
+Usage: walter-micbuttons [--monitor]   (--monitor: log/print only, run no commands)
+"""
+import fcntl
+import glob
+import os
+import select
+import subprocess
+import sys
+import time
+
+VID, PID = 0x0D8C, 0x0030
+WALTERCTL = os.path.expanduser("~/walter/bin/walterctl")
+LOG = os.path.expanduser("~/.walter/logs/micbuttons.log")
+POLL_S = 0.03
+HIDIOCGINPUT16 = (3 << 30) | (16 << 16) | (ord("H") << 8) | 0x0A
+
+BITS = {2: "mute", 3: "mute", 4: "mute"}  # volume buttons: up and down are indistinguishable on this mic, so unmapped  # byte 1 of report 1
+ACTIONS = {"volume up": ["volume", "up"], "volume down": ["volume", "down"],
+           "mute": ["mute", "toggle"]}
+
+
+def log(msg: str) -> None:
+    line = time.strftime("%Y-%m-%d %H:%M:%S ") + msg
+    print(line, flush=True)
+    try:
+        os.makedirs(os.path.dirname(LOG), exist_ok=True)
+        if os.path.exists(LOG) and os.path.getsize(LOG) > 1_000_000:
+            os.replace(LOG, LOG + ".1")
+        with open(LOG, "a") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass
+
+
+SOUND_DIR = os.path.expanduser("~/.walter/sounds")
+
+
+def _make_chime(path: str, freqs: list[float]) -> None:
+    import math, struct, wave
+    sr = 22050
+    frames = bytearray()
+    for f in freqs:
+        n = int(sr * 0.09)
+        for i in range(n):
+            env = min(1.0, i / 200) * min(1.0, (n - i) / 300)
+            frames += struct.pack("<h", int(9000 * env * math.sin(2 * math.pi * f * i / sr)))
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+        w.writeframes(bytes(frames))
+
+
+def chime_for_state() -> None:
+    """Soft two-note chime for Walter's REAL mute state (the button only says 'pressed')."""
+    try:
+        out = subprocess.run([WALTERCTL, "status"], capture_output=True, text=True, timeout=10).stdout
+        muted = '"mic_muted": true' in out
+        os.makedirs(SOUND_DIR, exist_ok=True)
+        path = os.path.join(SOUND_DIR, "muted.wav" if muted else "unmuted.wav")
+        if not os.path.exists(path):
+            _make_chime(path, [660, 440] if muted else [440, 660])
+        subprocess.Popen(["pw-play", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        log("chime: " + ("muted" if muted else "unmuted"))
+    except Exception as e:
+        log(f"chime failed: {e}")
+
+
+def find_hidraw() -> str | None:
+    want = f"HID_ID=0003:{VID:08X}:{PID:08X}"
+    for d in sorted(glob.glob("/sys/class/hidraw/hidraw*")):
+        try:
+            with open(os.path.join(d, "device", "uevent")) as f:
+                if want in f.read().upper():
+                    return "/dev/" + os.path.basename(d)
+        except OSError:
+            continue
+    return None
+
+
+class Buttons:
+    def __init__(self, monitor: bool):
+        self.monitor = monitor
+        self.prev_bits = 0
+        self.last = {}   # source -> last raw report
+        self.last_fire = {}
+
+    def report(self, src: str, data: bytes) -> None:
+        if not data:
+            return
+        if self.last.get(src) != data:
+            log(f"{src} {data.hex()}")
+            self.last[src] = data
+        if data[0] != 1 or len(data) < 3:
+            return
+        bits = data[1] | (data[2] << 8)
+        pressed = bits & ~self.prev_bits
+        self.prev_bits = bits
+        for bit, name in BITS.items():
+            if pressed & (1 << bit):
+                self.fire(name)
+        unknown = pressed & ~sum(1 << b for b in BITS)
+        if unknown:
+            log(f"unmapped bits pressed: {unknown:#06x}")
+
+    def fire(self, name: str) -> None:
+        now = time.monotonic()
+        # read() and the poll can both see one press; mute must toggle once.
+        if now - self.last_fire.get(name, 0) < 0.25:
+            return
+        self.last_fire[name] = now
+        log(f"button: {name}" + (" (monitor only)" if self.monitor else ""))
+        if not self.monitor:
+            subprocess.run([WALTERCTL, *ACTIONS[name]], timeout=15,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if name == "mute":
+                chime_for_state()
+
+
+def run(path: str, b: Buttons) -> None:
+    fd = os.open(path, os.O_RDWR | os.O_NONBLOCK)
+    log(f"opened {path}")
+    try:
+        while True:
+            r, _, _ = select.select([fd], [], [], POLL_S)
+            if r:
+                b.report("read", os.read(fd, 64))
+            buf = bytearray(16)
+            buf[0] = 1
+            try:
+                n = fcntl.ioctl(fd, HIDIOCGINPUT16, buf, True)
+                b.report("poll", bytes(buf[:n]))
+            except OSError:
+                pass
+    finally:
+        os.close(fd)
+
+
+def main() -> None:
+    b = Buttons("--monitor" in sys.argv)
+    waiting = False
+    while True:
+        path = find_hidraw()
+        if not path:
+            if not waiting:
+                log("mic not plugged in; waiting")
+                waiting = True
+            time.sleep(5)
+            continue
+        waiting = False
+        try:
+            run(path, b)
+        except OSError as e:   # unplugged, or no permission yet
+            log(f"{path}: {e}; retrying")
+            time.sleep(5)
+
+
+if __name__ == "__main__":
+    main()

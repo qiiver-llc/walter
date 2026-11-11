@@ -1,0 +1,214 @@
+#!/home/walter/walter/.venv/bin/python
+"""walter-dashboard: the wall dashboard shown while Walter sleeps.
+
+  walter-dashboard add "text" [--section tasks|shopping|notes|ideas|inbox] [--due WHEN] [--quiet]
+                                         add to the person's list (WHEN: today, tomorrow,
+                                         friday, 2026-11-06, 11/6, "friday 5pm", "17:30");
+                                         flashes "Added to ...: text" on my face for 5 s
+                                         (--quiet: don't). ideas = "Parked ideas" for things
+                                         mentioned in passing; inbox = to-dos said in
+                                         passing, sorted by `walterctl review`
+  walter-dashboard list [--json]         numbered list (numbers are what done/remove take)
+  walter-dashboard done N | undone N | remove N
+  walter-dashboard set-events FILE.json  this month's calendar grid of events (see events-window;
+                                         "-" = stdin; today + tomorrow fill the calendar
+                                         card, all of it the portrait month calendar;
+                                         up to 1000 events):
+                                         [{"title", "start" ISO, "end" ISO, "calendar" label,
+                                           "all_day" bool, "location", "outdoor" bool}]
+                                         outdoor events (keywords in [dashboard]
+                                         outdoor_keywords, or "outdoor": true/false)
+                                         get a weather chip: icon, temp, rain %
+  walter-dashboard events-window         the month grid to fetch: time_min and time_max (local
+                                         offsets), Sunday on/before the 1st to the day after the
+                                         Saturday on/after the month's last day
+  walter-dashboard events-age            minutes since the events were last set ("never")
+  walter-dashboard refresh [--no-weather]  fetch weather + NWS alerts, refresh the QR code
+                                         (walter-dashboard.timer runs this every 15 min)
+  walter-dashboard weather               print the last weather that was fetched
+  walter-dashboard sports [--live-only]  fetch the followed teams' games (ESPN, no key) for
+                                         the portrait month calendar ([dashboard] sports_teams,
+                                         e.g. ["nfl/gb", "mlb/nyy"]; refresh
+                                         does this too). --live-only: no-op unless a game is
+                                         live or about to start (walter-sports.timer, 2 min).
+                                         Nebraska high school teams: [dashboard] hs_teams
+                                         (NSAA pages, cached 30 min; README "Sports row")
+  walter-dashboard hs-find SCHOOL        look a Nebraska school up on the NSAA schedule pages:
+                                         prints ready-to-paste hs_teams entries (~1 min)
+  walter-dashboard show [SECONDS]        show the dashboard now even though I'm awake (default 60)
+  walter-dashboard hide                  stop showing it early
+
+The list lives in ~/.walter/dashboard.json; face/dashboard-*.json are what the face polls.
+"""
+import argparse, base64, io, json, sys, time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from walter import dashboard as D  # noqa: E402
+from walter.config import load  # noqa: E402
+
+
+def store(cfg):
+    return D.ListStore(title=cfg.dashboard.list_title)
+
+
+def face_extra(cfg) -> dict:
+    extra = {"enabled": bool(cfg.dashboard.enabled), "quiet": list(cfg.life.quiet_hours),
+             "dark": list(cfg.dashboard.dark_hours), "qr": "", "url": "",
+             "cal_colors": dict(getattr(cfg.dashboard, "calendar_colors", None) or {}),
+             "verse": bool(getattr(cfg.dashboard, "verse_line", False))}
+    ip = D.lan_ip() if cfg.dashboard.phone_page else ""
+    if ip:
+        url = f"http://{ip}:{cfg.server.port}/dashboard/add"
+        try:
+            import qrcode, qrcode.image.svg
+            buf = io.BytesIO()
+            qrcode.make(url, image_factory=qrcode.image.svg.SvgPathImage, border=1).save(buf)
+            extra["qr"] = "data:image/svg+xml;base64," + base64.b64encode(buf.getvalue()).decode()
+        except ImportError:
+            pass
+        extra["url"] = url
+    return extra
+
+
+def sports(cfg, live_only=False, verbose=False) -> int:
+    """The portrait sports row; never lets a sports failure stop the weather refresh."""
+    from walter import sports as SP
+    try:
+        d = SP.refresh(list(cfg.dashboard.sports_teams or []), live_only=live_only,
+                       rows=cfg.dashboard.sports_rows, hs=list(getattr(cfg.dashboard, "hs_teams", None) or []))
+    except Exception as e:
+        print(f"sports failed: {e}", file=sys.stderr); return 1
+    if d.get("skipped"):
+        verbose and print("sports: no game live, nothing fetched"); return 0
+    print(SP.describe(d), file=sys.stdout if d.get("ok") else sys.stderr)
+    return 0 if d.get("ok") or not (cfg.dashboard.sports_teams or getattr(cfg.dashboard, "hs_teams", None)) else 1
+
+
+def podcast_upnext():
+    """The face's podcast 'Up next' card (RSS cached 30 min, so ~1 fetch per show per 30 min)."""
+    try:
+        from walter import podcast as P
+        st = P.load()
+        if st.get("shows"):
+            P.publish_upnext(st)
+    except Exception as e:  # noqa: BLE001
+        print(f"podcast up-next failed: {e}", file=sys.stderr)
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(prog="walter-dashboard", add_help=False)
+    ap.add_argument("cmd", nargs="?")
+    ap.add_argument("args", nargs="*")
+    ap.add_argument("--section", "-s", default="tasks")
+    ap.add_argument("--due", "-d", default="")
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--no-weather", action="store_true")
+    ap.add_argument("--quiet", "-q", action="store_true")
+    ap.add_argument("--live-only", action="store_true")
+    ap.add_argument("-h", "--help", action="store_true")
+    a = ap.parse_args(argv)
+    if a.help or not a.cmd:
+        print(__doc__.strip()); return 0
+    cfg = load()
+    st = store(cfg)
+    try:
+        if a.cmd == "add":
+            text = " ".join(a.args)
+            sec = a.section
+            if sec == "tasks":  # "walter-dashboard add shopping: eggs" works too
+                sec, text = D.parse_quick(text)
+            item = st.add(text, sec, a.due)
+            n = len(st.items())
+            print(f"added #{n} to {item['section']}: {item['text']}" + (f" (due {item['due']})" if item.get("due") else ""))
+            if not a.quiet:   # show what I captured, so a mishearing is obvious at once
+                names = {"tasks": "To do", "shopping": "Shopping", "notes": "Notes", "ideas": "Parked ideas", "inbox": "Inbox"}
+                due = f"\nDue {item['due'].replace('T', ' ')}" if item.get("due") else ""
+                D.show_card(f"Added to {names.get(item['section'], 'the list')}", item["text"] + due, 5)
+        elif a.cmd in ("list", "ls"):
+            items = st.items()
+            print(json.dumps(items, indent=1, ensure_ascii=False) if a.json else D.format_list(items))
+        elif a.cmd in ("done", "undone", "remove", "rm", "delete"):
+            if not a.args:
+                print("which number? (see: walter-dashboard list)", file=sys.stderr); return 2
+            for ref in sorted(a.args, key=lambda x: -int(x) if x.isdigit() else 0):
+                if a.cmd == "done":
+                    it = st.done(ref); print(f"ticked off: {it['text']}")
+                elif a.cmd == "undone":
+                    it = st.done(ref, on=False); print(f"back on the list: {it['text']}")
+                else:
+                    it = st.remove(ref); print(f"removed: {it['text']}")
+        elif a.cmd == "set-events":
+            src = a.args[0] if a.args else "-"
+            raw = json.load(sys.stdin) if src == "-" else json.loads(Path(src).read_text())
+            ev = D.set_events(raw, keywords=cfg.dashboard.outdoor_keywords)
+            n_out = sum(1 for e in ev if e.get("outdoor"))
+            n_days = D.event_days(ev)
+            print(f"dashboard events: {len(ev)}" + (f" over {n_days} days" if n_days > 1 else "") +
+                  (f" ({n_out} outdoor, with weather)" if n_out else ""))
+        elif a.cmd == "events-window":
+            import datetime as dt
+            from walter.sports import local_zone
+            tz = local_zone()
+            s0, s1 = D.month_window(dt.datetime.now(tz).date())
+            iso = lambda d: dt.datetime(d.year, d.month, d.day, tzinfo=tz).isoformat()  # noqa: E731
+            print(f"time_min {iso(s0)}\ntime_max {iso(s1)}")
+        elif a.cmd == "events-age":
+            try:
+                up = json.loads((D.FACE_DIR / "dashboard-events.json").read_text()).get("updated", 0)
+                print(round((time.time() - up) / 60) if up else "never")
+            except (OSError, ValueError):
+                print("never")
+        elif a.cmd == "refresh":
+            extra = face_extra(cfg)
+            st.publish(extra=extra)
+            D.retag_events(cfg.dashboard.outdoor_keywords)   # keyword edits apply within 15 min
+            if not a.no_weather:
+                sports(cfg)
+                podcast_upnext()
+                if not (cfg.dashboard.lat or cfg.dashboard.lon):
+                    print("no [dashboard] lat/lon in ~/.walter/config.toml: skipping weather", file=sys.stderr)
+                else:
+                    out = D.FACE_DIR / "dashboard-weather.json"
+                    try:
+                        w = D.fetch_weather(cfg.dashboard.lat, cfg.dashboard.lon)
+                    except Exception as e:  # keep the last good forecast, flag the failure
+                        try:
+                            w = json.loads(out.read_text())
+                        except (OSError, ValueError):
+                            w = {}
+                        w.update({"ok": bool(w.get("temp") is not None), "error": str(e)[:160], "failed_at": time.time()})
+                        D.write_face_json(out, w)
+                        print(f"weather failed: {e}", file=sys.stderr); return 1
+                    D.write_face_json(out, w)
+                    print(f"weather: {w.get('temp')} F, {w.get('text')}, alerts: {len(w.get('alerts') or [])}")
+            print("phone page: " + (extra["url"] or "(no network address)"))
+        elif a.cmd == "sports":
+            return sports(cfg, a.live_only, verbose=True)
+        elif a.cmd == "hs-find":
+            from walter import hs_sports as HS
+            name = " ".join(a.args).strip()
+            if not name:
+                print("usage: walter-dashboard hs-find SCHOOL", file=sys.stderr); return 2
+            hits = HS.find_school(name)
+            for h in hits:
+                print(f'{{ sport = "{h["sport"]}", school = "{h["school"]}", class = "{h["class"]}", '
+                      f'sid = {h["sid"]}, abbr = "{HS.abbr_for(h["school"])}" }},')
+            if not hits:
+                print(f"no NSAA school matching {name!r}", file=sys.stderr); return 1
+        elif a.cmd == "weather":
+            print(json.dumps(json.loads((D.FACE_DIR / "dashboard-weather.json").read_text()), indent=1))
+        elif a.cmd in ("show", "hide"):
+            secs = float(a.args[0]) if a.cmd == "show" and a.args else 60.0
+            st.publish(extra={"show_until": time.time() + secs if a.cmd == "show" else 0})
+            print("dashboard " + (f"showing for {secs:.0f} s" if a.cmd == "show" else "hidden"))
+        else:
+            print(__doc__.strip()); return 2
+    except (ValueError, KeyError) as e:
+        print(f"walter-dashboard: {e.args[0] if e.args else e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,10 @@
+[Unit]
+Description=Walter: refresh the build view (shipped commits, release, tests) every 15 seconds (live diff for the build view)
+
+[Timer]
+OnBootSec=40s
+OnUnitActiveSec=15s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

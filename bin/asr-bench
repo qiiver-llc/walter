@@ -1,0 +1,171 @@
+#!/usr/bin/env python3
+"""Benchmark faster-whisper models on this CPU for Walter's ears.
+
+Synthesises test sentences with the piper voices in ~/.walter/voices (clean
+and with background noise), transcribes them with each model/beam/prompt
+combination using Walter's own transcribe settings, and prints word error
+rate and latency.
+
+    .venv/bin/python bin/asr-bench [--models base.en small.en distil-small.en]
+                                   [--beams 1 3] [--snr 10] [--threads 0]
+"""
+from __future__ import annotations
+
+import argparse
+import re
+import statistics
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from walter.ears import hint_prompt  # noqa: E402
+from walter.config import DATA_DIR, load  # noqa: E402
+
+# Generic defaults; put your own (with your household's names) in a file,
+# one per line, and pass --sentences FILE (default: ~/.walter/asr-bench-sentences.txt).
+SENTENCES = [
+    "Hey Walter, what's the weather tomorrow morning?",
+    "Walter, remind me in twenty minutes to call my sister.",
+    "Can you check whether my GitHub build passed?",
+    "Add milk, eggs and bread to the shopping list.",
+    "Walter, turn the living room lights off please.",
+    "Is it going to rain this weekend?",
+    "Ask Claude to summarize the electricity invoice.",
+    "What's on my calendar for Friday afternoon?",
+    "Set a timer for twelve minutes for the pizza.",
+    "Walter, read me the top three news headlines.",
+    "Thanks Walter, that's all for now.",
+]
+NUM = {"twenty": "20", "twelve": "12", "three": "3"}
+
+
+def norm(s: str) -> list[str]:
+    s = s.lower().replace("summarise", "summarize").replace("'s", "s").replace("’s", "s")
+    s = re.sub(r"[^a-z0-9 ]+", " ", s)
+    return [NUM.get(w, w) for w in s.split()]
+
+
+def wer_counts(ref: str, hyp: str) -> tuple[int, int]:
+    r, h = norm(ref), norm(hyp)
+    d = list(range(len(h) + 1))
+    for i in range(1, len(r) + 1):
+        prev, d[0] = d[0], i
+        for j in range(1, len(h) + 1):
+            cur = min(d[j] + 1, d[j - 1] + 1, prev + (r[i - 1] != h[j - 1]))
+            prev, d[j] = d[j], cur
+    return d[len(h)], len(r)
+
+
+def synth(voice_path: Path, text: str, length_scale: float) -> np.ndarray:
+    from piper import PiperVoice
+    from piper.config import SynthesisConfig
+    v = synth.cache.get(voice_path) or PiperVoice.load(str(voice_path))
+    synth.cache[voice_path] = v
+    chunks = list(v.synthesize(text, syn_config=SynthesisConfig(length_scale=length_scale)))
+    a = np.concatenate([c.audio_float_array for c in chunks]).astype(np.float32)
+    sr = chunks[0].sample_rate
+    n = int(len(a) * 16000 / sr)  # resample to 16 kHz
+    a = np.interp(np.linspace(0, len(a) - 1, n), np.arange(len(a)), a).astype(np.float32)
+    pad = np.zeros(int(0.3 * 16000), np.float32)
+    return np.concatenate([pad, a, pad])
+
+
+synth.cache = {}
+
+
+def add_noise(a: np.ndarray, snr_db: float, seed: int) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    # brown-ish room noise (fan/hum) plus some white hiss
+    white = rng.standard_normal(len(a)).astype(np.float32)
+    brown = np.cumsum(white)
+    brown -= np.convolve(brown, np.ones(400) / 400, mode="same")
+    noise = brown / (np.std(brown) + 1e-9) + 0.5 * white
+    p_sig = np.mean(a[np.abs(a) > 0.01] ** 2)
+    noise *= np.sqrt(p_sig / (10 ** (snr_db / 10)) / np.mean(noise ** 2))
+    return np.clip(a + noise, -1, 1).astype(np.float32)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--models", nargs="+", default=["base.en", "small.en", "distil-small.en"])
+    ap.add_argument("--beams", nargs="+", type=int, default=[1, 3])
+    ap.add_argument("--sentences", default=str(DATA_DIR / "asr-bench-sentences.txt"),
+                    help="file with one test sentence per line (default sentences if missing)")
+    ap.add_argument("--snr", type=float, default=10.0)
+    ap.add_argument("--threads", type=int, default=0)
+    ap.add_argument("--compute", default="int8")
+    ap.add_argument("--no-hints", action="store_true", help="skip the vocabulary-hint runs")
+    ap.add_argument("--hints-only", action="store_true", help="skip the no-hints baseline runs")
+    ap.add_argument("-v", "--verbose", action="store_true", help="print every mistranscription")
+    args = ap.parse_args()
+    from faster_whisper import WhisperModel
+
+    sentences = SENTENCES
+    if Path(args.sentences).is_file():
+        sentences = [ln.strip() for ln in Path(args.sentences).read_text().splitlines() if ln.strip()]
+    voices = sorted(Path.home().joinpath(".walter", "voices").glob("*.onnx"))
+    clips = []
+    for vi, vp in enumerate(voices):
+        for si, s in enumerate(sentences):
+            a = synth(vp, s, 1.0)
+            clips.append((f"{vp.stem}/clean", s, a))
+            clips.append((f"{vp.stem}/noisy", s, add_noise(a, args.snr, vi * 100 + si)))
+    secs = statistics.mean(len(c[2]) / 16000 for c in clips)
+    print(f"{len(clips)} clips from {len(voices)} voices, mean {secs:.1f} s, noise SNR {args.snr} dB")
+
+    hints = load().ears.hotwords  # yours, from ~/.walter/config.toml
+    prompts = [] if args.hints_only else [("old", "Walter is a friendly wall buddy. Hey Walter.", "Walter")]
+    if not args.no_hints:
+        prompts.append(("hints", hint_prompt(hints), " ".join(hints)))
+    print(f"{'model':16} {'beam':>4} {'prompt':6} {'WER clean':>9} {'WER noisy':>9} "
+          f"{'mean s':>7} {'p90 s':>6} {'s per 4s':>8}")
+    for m in args.models:
+        model = WhisperModel(m, device="cpu", compute_type=args.compute, cpu_threads=args.threads)
+        model.transcribe(np.zeros(8000, np.float32), language="en")  # warm-up
+        for beam in args.beams:
+            for pname, prompt, hot in prompts:
+                errs = {"clean": [0, 0], "noisy": [0, 0]}
+                times, rates, misses = [], [], []
+                for tag, ref, audio in clips:
+                    t0 = time.monotonic()
+                    segs, _ = model.transcribe(
+                        audio, language="en", beam_size=beam, condition_on_previous_text=False,
+                        no_speech_threshold=0.6, initial_prompt=prompt, hotwords=hot,
+                        vad_filter=True, vad_parameters=dict(threshold=0.5, min_silence_duration_ms=500,
+                                                             speech_pad_ms=300))
+                    hyp = " ".join(s.text.strip() for s in segs)
+                    dt = time.monotonic() - t0
+                    times.append(dt)
+                    rates.append(dt / (len(audio) / 16000))
+                    e, n = wer_counts(ref, hyp)
+                    k = tag.split("/")[1]
+                    errs[k][0] += e
+                    errs[k][1] += n
+                    if e:
+                        misses.append(f"    [{tag}] {hyp}")
+                times.sort()
+                print(f"{m:16} {beam:>4} {pname:6} {100 * errs['clean'][0] / errs['clean'][1]:8.1f}% "
+                      f"{100 * errs['noisy'][0] / errs['noisy'][1]:8.1f}% {statistics.mean(times):7.2f} "
+                      f"{times[int(0.9 * len(times))]:6.2f} {4 * statistics.mean(rates):8.2f}", flush=True)
+                ghosts = 0  # pure background noise: any text is a hallucination
+                for k in range(6):
+                    noise = add_noise(np.full(4 * 16000, 0.02, np.float32), 0, 900 + k) * 0.3
+                    segs, _ = model.transcribe(noise, language="en", beam_size=beam, initial_prompt=prompt,
+                                               hotwords=hot, condition_on_previous_text=False,
+                                               vad_filter=True)
+                    ghost = " ".join(s.text.strip() for s in segs if s.no_speech_prob <= 0.7
+                                     and s.avg_logprob >= -1.0)
+                    ghosts += bool(ghost)
+                    if ghost:
+                        misses.append(f"    [noise only] {ghost}")
+                print(f"{'':16} {'':>4} {'':6} hallucinations on 6 noise-only clips: {ghosts}")
+                if args.verbose:
+                    print("\n".join(misses))
+        del model
+
+
+if __name__ == "__main__":
+    main()

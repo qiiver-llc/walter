@@ -1,0 +1,66 @@
+{
+"team": {
+"id": "9001",
+"abbreviation": "NFD",
+"shortDisplayName": "Northfield",
+"name": "Owls",
+"color": "2a6f3b",
+"record": {
+"items": [
+{
+"summary": "5-3"
+}
+]
+},
+"nextEvent": [
+{
+"id": "401858510",
+"date": "2026-11-07T01:00Z",
+"shortName": "NFD @ ILL",
+"competitions": [
+{
+"id": "401858510",
+"date": "2026-11-07T01:00Z",
+"timeValid": true,
+"status": {
+"clock": 0.0,
+"displayClock": "0:00",
+"period": 0,
+"type": {
+"completed": false,
+"description": "Scheduled",
+"detail": "Fri, November 6th at 8:00 PM EST",
+"id": "1",
+"name": "STATUS_SCHEDULED",
+"shortDetail": "11/6 - 8:00 PM EST",
+"state": "pre"
+}
+},
+"competitors": [
+{
+"id": "356",
+"homeAway": "home",
+"winner": null,
+"score": null,
+"team": {
+"id": "356",
+"abbreviation": "ILL"
+}
+},
+{
+"id": "9001",
+"homeAway": "away",
+"winner": null,
+"score": null,
+"team": {
+"id": "9001",
+"abbreviation": "NFD"
+}
+}
+]
+}
+]
+}
+]
+}
+}

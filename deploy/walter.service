@@ -1,0 +1,22 @@
+[Unit]
+Description=Walter the Wall Buddy (brain, ears, voice)
+After=pipewire.service pipewire-pulse.service wireplumber.service network-online.target
+Wants=pipewire.service pipewire-pulse.service wireplumber.service
+# If Walter breaks himself and keeps crashing, systemd gives up after 6 tries
+# in 2 minutes; roll him back with deploy/rescue.sh.
+StartLimitIntervalSec=120
+StartLimitBurst=6
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO@
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=@REPO@/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=@REPO@/.venv/bin/python -m walter
+Restart=always
+RestartSec=3
+# Walter exits in under 5 s (hard watchdog in __main__.py); never wait the default 90 s.
+TimeoutStopSec=8
+
+[Install]
+WantedBy=default.target

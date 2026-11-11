@@ -1,0 +1,416 @@
+{
+ "version": 1,
+ "images": [
+  {
+   "file": "autumn-road.jpg",
+   "name": "autumn-road",
+   "title": "Skyline Drive through golden autumn trees, Shenandoah",
+   "tags": {
+    "time": "day",
+    "mood": "bright",
+    "season": "autumn",
+    "weather": "clear",
+    "scene": [
+     "forest",
+     "road"
+    ]
+   },
+   "luma": 0.42
+  },
+  {
+   "file": "badlands-dusk.jpg",
+   "name": "badlands-dusk",
+   "title": "Badlands National Park at dusk, South Dakota",
+   "tags": {
+    "time": "sunset",
+    "mood": "calm",
+    "season": "any",
+    "weather": "clear",
+    "scene": [
+     "badlands",
+     "plains"
+    ]
+   },
+   "luma": 0.49
+  },
+  {
+   "file": "bowman-lake.jpg",
+   "name": "bowman-lake",
+   "title": "Mirror-still Bowman Lake, Glacier National Park",
+   "tags": {
+    "time": "day",
+    "mood": "calm",
+    "season": "spring",
+    "weather": "clouds",
+    "scene": [
+     "lake",
+     "mountains",
+     "forest"
+    ]
+   },
+   "luma": 0.53
+  },
+  {
+   "file": "coast-morning-mist.jpg",
+   "name": "coast-morning-mist",
+   "title": "Misty morning at Cannon Beach, Oregon",
+   "tags": {
+    "time": "sunrise",
+    "mood": "calm",
+    "season": "any",
+    "weather": "fog",
+    "scene": [
+     "coast",
+     "sea"
+    ]
+   },
+   "luma": 0.5
+  },
+  {
+   "file": "cranes-golden-sunset.jpg",
+   "name": "cranes-golden-sunset",
+   "title": "Sandhill cranes flying to roost on the Platte River at sunset, Nebraska",
+   "tags": {
+    "time": "sunset",
+    "mood": "bright",
+    "season": "spring",
+    "weather": "clear",
+    "scene": [
+     "river",
+     "birds",
+     "plains",
+     "nebraska"
+    ]
+   },
+   "luma": 0.49
+  },
+  {
+   "file": "desert-milky-way.jpg",
+   "name": "desert-milky-way",
+   "title": "Milky Way over Joshua trees, Joshua Tree National Park",
+   "tags": {
+    "time": "night",
+    "mood": "dark",
+    "season": "any",
+    "weather": "clear",
+    "scene": [
+     "stars",
+     "desert"
+    ]
+   },
+   "luma": 0.23
+  },
+  {
+   "file": "frosty-sunrise.jpg",
+   "name": "frosty-sunrise",
+   "title": "Frosty sagebrush flats at sunrise, Grand Teton National Park",
+   "tags": {
+    "time": "sunrise",
+    "mood": "calm",
+    "season": "winter",
+    "weather": "clouds",
+    "scene": [
+     "plains",
+     "frost"
+    ]
+   },
+   "luma": 0.29
+  },
+  {
+   "file": "lake-mcdonald-autumn.jpg",
+   "name": "lake-mcdonald-autumn",
+   "title": "Lake McDonald reflections in autumn, Glacier National Park",
+   "tags": {
+    "time": "day",
+    "mood": "calm",
+    "season": "autumn",
+    "weather": "clouds",
+    "scene": [
+     "lake",
+     "mountains",
+     "forest"
+    ]
+   },
+   "luma": 0.52
+  },
+  {
+   "file": "lakeside-sunset.jpg",
+   "name": "lakeside-sunset",
+   "title": "Calm lake at sunset with an old dock",
+   "tags": {
+    "time": "sunset",
+    "mood": "calm",
+    "season": "summer",
+    "weather": "clouds",
+    "scene": [
+     "lake"
+    ]
+   },
+   "luma": 0.41
+  },
+  {
+   "file": "milky-way-prairie.jpg",
+   "name": "milky-way-prairie",
+   "title": "Milky Way over Big Prairie, Glacier National Park",
+   "tags": {
+    "time": "night",
+    "mood": "dark",
+    "season": "summer",
+    "weather": "clear",
+    "scene": [
+     "stars",
+     "prairie"
+    ]
+   },
+   "luma": 0.21
+  },
+  {
+   "file": "milky-way-rockies.jpg",
+   "name": "milky-way-rockies",
+   "title": "Milky Way arching over Rocky Mountain National Park",
+   "tags": {
+    "time": "night",
+    "mood": "dark",
+    "season": "summer",
+    "weather": "clear",
+    "scene": [
+     "stars",
+     "mountains",
+     "forest"
+    ]
+   },
+   "luma": 0.27
+  },
+  {
+   "file": "misty-forest.jpg",
+   "name": "misty-forest",
+   "title": "Fog drifting over a steep conifer forest",
+   "tags": {
+    "time": "day",
+    "mood": "calm",
+    "season": "autumn",
+    "weather": "fog",
+    "scene": [
+     "forest",
+     "mountains"
+    ]
+   },
+   "luma": 0.62
+  },
+  {
+   "file": "northern-lights-river.jpg",
+   "name": "northern-lights-river",
+   "title": "Northern lights over a frosty river in Lapland",
+   "tags": {
+    "time": "night",
+    "mood": "dark",
+    "season": "winter",
+    "weather": "clear",
+    "scene": [
+     "northern-lights",
+     "snow",
+     "river"
+    ]
+   },
+   "luma": 0.36
+  },
+  {
+   "file": "peyto-lake-twilight.jpg",
+   "name": "peyto-lake-twilight",
+   "title": "Peyto Lake at twilight, Banff",
+   "tags": {
+    "time": "sunset",
+    "mood": "calm",
+    "season": "autumn",
+    "weather": "clear",
+    "scene": [
+     "lake",
+     "mountains",
+     "forest"
+    ]
+   },
+   "luma": 0.34
+  },
+  {
+   "file": "platte-river-morning.jpg",
+   "name": "platte-river-morning",
+   "title": "March morning on the Platte River, Nebraska, with migrating cranes",
+   "tags": {
+    "time": "sunrise",
+    "mood": "calm",
+    "season": "spring",
+    "weather": "clear",
+    "scene": [
+     "river",
+     "plains",
+     "birds",
+     "nebraska"
+    ]
+   },
+   "luma": 0.54
+  },
+  {
+   "file": "prairie-meadow.jpg",
+   "name": "prairie-meadow",
+   "title": "Open tallgrass prairie with wildflowers, Minnesota",
+   "tags": {
+    "time": "day",
+    "mood": "bright",
+    "season": "summer",
+    "weather": "clear",
+    "scene": [
+     "prairie",
+     "plains"
+    ]
+   },
+   "luma": 0.45
+  },
+  {
+   "file": "prairie-storm.jpg",
+   "name": "prairie-storm",
+   "title": "Lightning in a storm over wind turbines on the plains",
+   "tags": {
+    "time": "sunset",
+    "mood": "dark",
+    "season": "spring",
+    "weather": "storm",
+    "scene": [
+     "plains",
+     "storm"
+    ]
+   },
+   "luma": 0.23
+  },
+  {
+   "file": "rocky-coast-evening.jpg",
+   "name": "rocky-coast-evening",
+   "title": "Rocky coastline and sea stacks in soft evening light",
+   "tags": {
+    "time": "sunset",
+    "mood": "calm",
+    "season": "summer",
+    "weather": "clear",
+    "scene": [
+     "coast",
+     "sea",
+     "mountains"
+    ]
+   },
+   "luma": 0.55
+  },
+  {
+   "file": "sandhills-winter-road.jpg",
+   "name": "sandhills-winter-road",
+   "title": "A road through the snowy Sandhills, Valentine refuge, Nebraska",
+   "tags": {
+    "time": "day",
+    "mood": "calm",
+    "season": "winter",
+    "weather": "overcast",
+    "scene": [
+     "plains",
+     "road",
+     "snow",
+     "nebraska"
+    ]
+   },
+   "luma": 0.5
+  },
+  {
+   "file": "sea-cliffs.jpg",
+   "name": "sea-cliffs",
+   "title": "Sunny sea cliffs above a deep blue ocean",
+   "tags": {
+    "time": "day",
+    "mood": "bright",
+    "season": "summer",
+    "weather": "clear",
+    "scene": [
+     "coast",
+     "sea"
+    ]
+   },
+   "luma": 0.56
+  },
+  {
+   "file": "snowy-peaks-dusk.jpg",
+   "name": "snowy-peaks-dusk",
+   "title": "Snowy peaks under pink clouds, Yellowstone",
+   "tags": {
+    "time": "sunset",
+    "mood": "dark",
+    "season": "winter",
+    "weather": "clouds",
+    "scene": [
+     "mountains",
+     "snow",
+     "forest"
+    ]
+   },
+   "luma": 0.29
+  },
+  {
+   "file": "teton-sunrise.jpg",
+   "name": "teton-sunrise",
+   "title": "Pink sunrise clouds over the Teton Range",
+   "tags": {
+    "time": "sunrise",
+    "mood": "bright",
+    "season": "spring",
+    "weather": "clouds",
+    "scene": [
+     "mountains"
+    ]
+   },
+   "luma": 0.57
+  },
+  {
+   "file": "two-medicine-lake.jpg",
+   "name": "two-medicine-lake",
+   "title": "Clouds clearing over Two Medicine Lake, Glacier National Park",
+   "tags": {
+    "time": "day",
+    "mood": "calm",
+    "season": "summer",
+    "weather": "clouds",
+    "scene": [
+     "lake",
+     "mountains"
+    ]
+   },
+   "luma": 0.44
+  },
+  {
+   "file": "wheat-sunset.jpg",
+   "name": "wheat-sunset",
+   "title": "Wheat glowing in a golden sunset",
+   "tags": {
+    "time": "sunset",
+    "mood": "bright",
+    "season": "summer",
+    "weather": "clear",
+    "scene": [
+     "fields",
+     "farm"
+    ]
+   },
+   "luma": 0.55
+  },
+  {
+   "file": "winter-evergreens.jpg",
+   "name": "winter-evergreens",
+   "title": "Snow falling on dark evergreen forest",
+   "tags": {
+    "time": "day",
+    "mood": "dark",
+    "season": "winter",
+    "weather": "snow",
+    "scene": [
+     "forest",
+     "snow"
+    ]
+   },
+   "luma": 0.35
+  }
+ ]
+}

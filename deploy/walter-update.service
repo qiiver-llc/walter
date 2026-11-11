@@ -1,0 +1,10 @@
+[Unit]
+Description=Update Walter to the latest tested version (signed release channel or GitHub)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/var/lib/walter/installed
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/walter-update
+TimeoutStartSec=2h

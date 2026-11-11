@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Walter</title>
+<style>
+/* mouse pointer: only visible while the mouse is moving (JS toggles .mouse-live) */
+html:not(.mouse-live), html:not(.mouse-live) * { cursor: none !important; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: #05060a; cursor: none; user-select: none;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #caption {
+    position: fixed; left: 50%; bottom: 3vh; transform: translateX(-50%);
+    max-width: 70vw; text-align: center; color: rgba(255,255,255,0.55);
+    font-size: 2.2vh; line-height: 1.35; pointer-events: none;
+    transition: opacity 0.6s; opacity: 0;
+  }
+  #clock {
+    position: fixed; left: 3vh; top: 2.5vh; pointer-events: none;
+    color: rgba(255,255,255,0.55); font-size: 4.5vh; font-weight: 300; line-height: 1.1;
+  }
+  #clock .date { font-size: 2vh; color: rgba(255,255,255,0.35); }
+  #restart {
+    position: fixed; right: 3vh; bottom: 2.5vh; pointer-events: none;
+    padding: 1vh 2vh; border-radius: 3vh; font-size: 2.2vh; font-weight: 500;
+    opacity: 0; transition: opacity 0.5s;
+  }
+  #restart.down { opacity: 1; color: #ffd27a; background: rgba(255,190,80,0.12);
+    animation: rspulse 1.6s ease-in-out infinite; }
+  #restart.up { opacity: 1; color: #8affc1; background: rgba(120,255,180,0.12); }
+  @keyframes rspulse { 50% { opacity: 0.45; } }
+  #workers {
+    position: fixed; right: 3vh; top: 5.5vh; width: 30vw; max-width: 460px; pointer-events: none;
+    color: rgba(255,255,255,0.5); font-size: 1.7vh; line-height: 1.35; text-align: right;
+    transition: opacity 0.6s; opacity: 0;
+  }
+  #workers .hdr { font-size: 1.5vh; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.3); margin-bottom: 0.6vh; }
+  #workers .slots { display: inline-flex; gap: 0.5vh; margin-left: 0.8vh; vertical-align: middle; }
+  #workers .slot { width: 1.1vh; height: 1.1vh; border-radius: 50%; background: rgba(255,255,255,0.12); }
+  #workers .slot.on { background: #58c4ff; animation: rspulse 1.6s ease-in-out infinite; }
+  #workers .job { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #workers .job .t { color: rgba(255,255,255,0.3); margin-left: 0.8vh; font-variant-numeric: tabular-nums; }
+  #workers .job.queued { color: rgba(255,210,122,0.55); }
+  #workers .job.done { color: rgba(138,255,193,0.6); }
+  #card {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(0.96);
+    min-width: 34vw; max-width: 70vw; box-sizing: border-box; padding: 3.5vh 4.5vh; pointer-events: none;
+    background: rgba(13,17,27,0.92); border: 1px solid rgba(88,196,255,0.35); border-radius: 3vh;
+    color: #e8eefc; text-align: center; opacity: 0; transition: opacity 0.4s, transform 0.4s;
+    box-shadow: 0 2vh 6vh rgba(0,0,0,0.5);
+  }
+  #card { z-index: 8; }   /* above the canvas/browser panels: a QR card must be scannable */
+  #card.on { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  #card .title { font-size: 2.4vh; letter-spacing: 0.12em; text-transform: uppercase; color: #58c4ff; margin-bottom: 1.6vh; }
+  #card .body { font-size: 6vh; font-weight: 600; line-height: 1.25; white-space: pre-line; }
+  #card .img { display: none; width: 34vh; height: 34vh; margin: 0 auto 2vh; background: #fff; border-radius: 2vh; padding: 1.4vh; box-sizing: border-box; }
+  #card .img.on { display: block; }
+  #card .body.long { font-size: 3vh; font-weight: 400; text-align: left; }
+  #sayname {
+    position: fixed; left: 50%; top: 2.5vh; transform: translateX(-50%); pointer-events: none;
+    padding: 0.5vh 1.6vh; border-radius: 3vh; font-size: 1.6vh; letter-spacing: 0.02em; white-space: nowrap;
+    color: rgba(255,255,255,0.38); background: rgba(255,255,255,0.05); opacity: 0; transition: opacity 0.8s;
+  }
+  #sayname.on { opacity: 1; }
+  #caption.you { color: rgba(170,200,255,0.45); font-style: italic; }
+  /* karaoke: the sentence shows dim, each word brightens as it's spoken */
+  #caption.karaoke .w { color: rgba(255,255,255,0.3); transition: color 0.18s, text-shadow 0.3s; }
+  #caption.karaoke .w.said { color: rgba(255,255,255,0.62); }
+  #caption.karaoke .w.now { color: rgba(255,255,255,0.88); text-shadow: 0 0 1.2vh rgba(150,200,255,0.35); }
+  /* "Are you still talking?" indicator, just under the caption */
+  #listen {
+    position: fixed; left: 50%; top: 2.5vh; transform: translateX(-50%); pointer-events: none;
+    padding: 0.5vh 1.6vh; border-radius: 3vh; font-size: 1.7vh; font-weight: 500; letter-spacing: 0.02em;
+    white-space: nowrap; opacity: 0; transition: opacity 0.4s, color 0.4s, background 0.4s;
+  }
+  #listen::before {
+    content: ""; display: inline-block; width: 0.9vh; height: 0.9vh; border-radius: 50%;
+    margin-right: 0.8vh; vertical-align: 0.1vh; background: currentColor;
+  }
+  #listen.open { opacity: 1; color: rgba(170,200,255,0.75); background: rgba(120,160,255,0.10); }
+  #listen.open::before { animation: lspulse 1.2s ease-in-out infinite; }
+  #listen.heard { opacity: 1; color: #8affc1; background: rgba(120,255,180,0.10); }
+  #listen.thinking { opacity: 0.8; color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06);
+    animation: rspulse 1.6s ease-in-out infinite; }
+  @keyframes lspulse { 50% { opacity: 0.25; transform: scale(0.7); } }
+  /* Microphone muted by the person (Space bar / walterctl mute) */
+  #micoff {
+    position: fixed; left: 50%; top: 2.5vh; transform: translateX(-50%) translateY(-1vh); pointer-events: none;
+    display: flex; align-items: center; gap: 0.8vh; padding: 0.6vh 1.6vh 0.6vh 1.2vh; border-radius: 3vh;
+    font-size: 1.8vh; font-weight: 600; letter-spacing: 0.04em; white-space: nowrap;
+    color: #ff8a8a; background: rgba(255,70,70,0.14); border: 1px solid rgba(255,90,90,0.35);
+    opacity: 0; transition: opacity 0.35s, transform 0.35s;
+  }
+  #micoff.on { opacity: 1; transform: translateX(-50%); }
+  /* ...or by the mic's own mute button (seen as digital silence): amber, not red */
+  #micoff.hw { color: #ffd27a; background: rgba(255,190,80,0.14); border-color: rgba(255,190,80,0.35); }
+  /* Presence camera active (tiny, unobtrusive; under the clock) */
+  #camon {
+    position: fixed; right: 3vh; top: 2.5vh; pointer-events: none;
+    display: flex; align-items: center; gap: 0.6vh; font-size: 1.4vh; letter-spacing: 0.08em;
+    color: rgba(255,255,255,0.28); opacity: 0; transition: opacity 0.6s;
+  }
+  #camon.on { opacity: 1; }
+  #camon svg { width: 1.9vh; height: 1.9vh; }
+  #camon::after { content: ""; width: 0.6vh; height: 0.6vh; border-radius: 50%;
+    background: rgba(138,255,193,0.55); }
+  /* Cloud speech in use (OpenAI voice and/or ears): just left of the camera light */
+  #cloudon {
+    position: fixed; right: 3vh; top: 2.5vh; pointer-events: none;
+    display: flex; align-items: center; gap: 0.5vh; font-size: 1.3vh; letter-spacing: 0.08em;
+    text-transform: uppercase; color: rgba(150,200,255,0.42); opacity: 0;
+    transition: opacity 0.6s, right 0.4s;
+  }
+  #cloudon.on { opacity: 1; }
+  #cloudon.idle { opacity: 0.45; }   /* chosen, but no key yet or today's cap reached: local */
+  #cloudon.withcam { right: 7.2vh; }
+  #cloudon svg { width: 2.1vh; height: 2.1vh; }
+  #micoff svg { width: 2.2vh; height: 2.2vh; }
+  #typebox {
+    position: fixed; left: 50%; bottom: 12vh; transform: translateX(-50%);
+    width: 50vw; display: none;
+  }
+  #setup {
+    position: fixed; right: 7vw; top: 50%; transform: translateY(-50%);
+    width: 36vw; max-width: 560px; color: #e8eefc; display: none; text-align: center;
+  }
+  #setup h1 { font-size: 3.6vh; font-weight: 650; margin: 0 0 1vh; }
+  #setup p { font-size: 2.1vh; color: #9fb0d0; margin: 0.6vh 0 2vh; line-height: 1.4; }
+  #setup .qr { width: 30vh; height: 30vh; margin: 0 auto; background: #fff; border-radius: 2vh; padding: 1.4vh; }
+  #setup .qr img { width: 100%; height: 100%; display: block; }
+  #setup .hint { font-size: 1.7vh; color: #6f7f9f; margin-top: 2vh; }
+  #setup input { width: 100%; box-sizing: border-box; padding: 1.2vh; font-size: 2vh; border-radius: 1.2vh;
+    border: 1px solid #2a3550; background: #070a12; color: #fff; margin-top: 1.5vh; cursor: text; }
+  #setup .msg { min-height: 2.4vh; font-size: 1.9vh; margin-top: 1vh; color: #ff8a8a; }
+  #typebox input {
+    width: 100%; box-sizing: border-box; padding: 1.2vh 1.6vh;
+    font-size: 2.2vh; border-radius: 3vh; border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.06); color: #fff; outline: none; cursor: text;
+  }
+  /* ---- Wi-Fi: a small icon while offline, and a minimal network picker */
+  #netIcon {
+    position: fixed; right: 2.5vh; bottom: 2.5vh; width: 6.5vh; height: 6.5vh; display: none;
+    border: 0; border-radius: 50%; padding: 1.3vh; cursor: pointer;
+    background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.8);
+    animation: netpulse 2.4s ease-in-out infinite;
+  }
+  #netIcon svg { width: 100%; height: 100%; display: block; }
+  @keyframes netpulse { 50% { background: rgba(255,120,120,0.22); } }
+  #netPanel {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(3,4,8,0.72); cursor: default;
+  }
+  #netPanel .card {
+    width: min(92vw, 520px); max-height: 82vh; overflow: auto; box-sizing: border-box;
+    background: #0d111b; border: 1px solid #1d2638; border-radius: 18px; padding: 22px;
+    color: #e8eefc; font-size: 16px;
+  }
+  #netPanel h2 { margin: 0 0 4px; font-size: 20px; }
+  #netPanel .sub { margin: 0 0 14px; color: #9fb0d0; font-size: 14px; }
+  #netPanel .row {
+    display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box;
+    padding: 12px; margin: 0 0 6px; border-radius: 10px; border: 1px solid #1d2638;
+    background: #111827; color: inherit; font-size: 16px; text-align: left; cursor: pointer;
+  }
+  #netPanel .row:hover, #netPanel .row.sel { border-color: #58c4ff; }
+  #netPanel .row .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #netPanel .row .meta { color: #9fb0d0; font-size: 13px; white-space: nowrap; }
+  #netPanel input {
+    width: 100%; box-sizing: border-box; padding: 12px; margin: 8px 0; border-radius: 10px;
+    border: 1px solid #2a3550; background: #070a12; color: #fff; font-size: 16px; cursor: text;
+  }
+  #netPanel .btns { display: flex; gap: 10px; margin-top: 6px; }
+  #netPanel .btn {
+    flex: 1; padding: 12px; border: 0; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer;
+    background: #58c4ff; color: #05060a;
+  }
+  #netPanel .btn.ghost { background: #1b2233; color: #e8eefc; }
+  #netPanel .msg { min-height: 1.3em; margin-top: 10px; font-size: 14px; color: #9fb0d0; }
+  #netPanel .msg.err { color: #ff8a8a; } #netPanel .msg.ok { color: #8affc1; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="clock"><div class="time"></div><div class="date"></div></div>
+<div id="restart"></div>
+<div id="workers"></div>
+<div id="card"><div class="title"></div><img class="img" alt=""><div class="body"></div></div>
+<div id="sayname">Say “Walter”</div>
+<div id="caption"></div>
+<div id="listen"></div>
+<div id="camon" title="Camera on: presence only, nothing is recorded"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5h11a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 15V9A1.5 1.5 0 0 1 3 7.5z"/><path d="M15.5 10.5l6-3v9l-6-3"/></svg></div>
+<div id="cloudon" title="Cloud speech (OpenAI) is in use"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.6 9.1 4.75 4.75 0 0 0 7 18.5z"/></svg><span id="cloudtxt"></span></div>
+<div id="micoff" aria-live="polite"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/><path d="M3.5 3.5l17 17"/></svg>Mic off</div>
+<div id="typebox"><input id="typein" placeholder="Talk to Walter… (Enter to send, Esc to close)" autocomplete="off"></div>
+<div id="setup">
+  <div id="setupPhone">
+    <h1>Wake me up!</h1>
+    <p>Scan this with your phone to connect my brain.<br>(Your phone needs to be on the same Wi-Fi.)</p>
+    <div class="qr"><img id="qrPhone" alt=""></div>
+    <div class="hint">Keyboard plugged in? Press <b>Enter</b> to sign in to Claude right here.</div>
+  </div>
+  <div id="setupKeys" style="display:none">
+    <h1>Sign in to Claude</h1>
+    <p>Claude's own sign-in window is opening on this screen.<br>Sign in there with your Claude account;
+      I'll check when you close it.</p>
+    <p>Walter uses your own Claude account or API key; Walter never sees your Claude password or login code.</p>
+    <div class="msg" id="setupMsg"></div>
+    <div class="hint">Enter to open it again &middot; Esc to go back</div>
+  </div>
+</div>
+<button id="netIcon" title="Connect to Wi-Fi" aria-label="Connect to Wi-Fi">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+    <path d="M2 8.5a15 15 0 0 1 20 0"/><path d="M5 12a10.5 10.5 0 0 1 14 0"/>
+    <path d="M8.5 15.5a5.5 5.5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="currentColor"/>
+    <path d="M3 3l18 18" stroke="#ff8a8a"/>
+  </svg>
+</button>
+<div id="netPanel">
+  <div class="card">
+    <h2>Connect Walter to Wi-Fi</h2>
+    <p class="sub" id="netSub">Pick your network.</p>
+    <div id="netList"></div>
+    <div id="netForm" style="display:none">
+      <input id="netSsid" placeholder="Network name" autocomplete="off" spellcheck="false">
+      <input id="netPw" type="password" placeholder="Password" autocomplete="off">
+    </div>
+    <div class="btns">
+      <button class="btn ghost" id="netClose">Close</button>
+      <button class="btn ghost" id="netRescan">Scan again</button>
+      <button class="btn" id="netGo" style="display:none">Connect</button>
+    </div>
+    <div class="msg" id="netMsg"></div>
+  </div>
+</div>
+<script src="faceid.js"></script>
+<script src="demo.js"></script>
+<script src="walter.js"></script>
+<script src="setup.js"></script>
+<script src="firstrun.js"></script>
+<script src="net.js"></script>
+<script src="usage.js"></script>
+<script src="canvas.js"></script>
+<script src="browser.js"></script>
+<script src="checklist.js"></script>
+<script src="background.js"></script>
+<script src="calstyle.js"></script>
+<script src="dashboard.js"></script>
+<script src="workerslive.js"></script>
+<script src="loop.js"></script>
+<script src="focus.js"></script>
+<script src="convgate.js"></script>
+<script src="chatlib.js"></script>
+<script src="converse.js"></script>
+<script src="buildgate.js"></script>
+<script src="cockpitlib.js"></script>
+<script src="cockpit.js"></script>
+<script src="buildview.js"></script>
+<script src="chat.js"></script>
+<script src="wallstate.js"></script>
+<script src="portrait.js"></script>
+<script src="textscale.js"></script>
+<script src="themes.js"></script>
+<script>
+  (function () {
+    const t = document.querySelector('#clock .time'), d = document.querySelector('#clock .date');
+    function tick() {
+      const now = new Date();
+      t.textContent = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      d.textContent = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    }
+    tick(); setInterval(tick, 1000);
+  })();
+  (function () {
+    // Restart indicator: "Restarting…" while the brain is offline, "I'm back" when it returns.
+    const el = document.getElementById('restart');
+    let wasUp = false, wentDown = false, downTimer = null, hideTimer = null;
+    window.walterLink = function (up) {
+      if (up) {
+        clearTimeout(downTimer);
+        if (wentDown) {
+          el.textContent = "I'm back"; el.className = 'up';
+          clearTimeout(hideTimer); hideTimer = setTimeout(() => { el.className = ''; }, 4000);
+        }
+        wasUp = true; wentDown = false;
+      } else if (wasUp && !wentDown) {
+        wentDown = true;
+        downTimer = setTimeout(() => { el.textContent = 'Restarting…'; el.className = 'down'; }, 800);
+      }
+    };
+  })();
+  // Worker slots: see workerslive.js (live status from face/dashboard-workers.json).
+  (function () {
+    // Info card: big centred card fed by bin/walter-show (face/card.json).
+    const el = document.getElementById('card'), ti = el.querySelector('.title'), bo = el.querySelector('.body'), im = el.querySelector('.img');
+    let lastId = null, until = 0;
+    async function poll() {
+      try {
+        const c = await (await fetch('card.json', { cache: 'no-store' })).json();
+        if (c.id !== lastId) {
+          lastId = c.id;
+          if (c.clear) { el.className = ''; until = 0; }
+          else {
+            ti.textContent = c.title || ''; bo.textContent = c.body || '';
+            if (c.img) { im.src = c.img; im.className = 'img on'; } else { im.removeAttribute('src'); im.className = 'img'; }
+            bo.className = 'body' + ((c.body || '').length > 40 ? ' long' : '');
+            until = c.until || 0; el.className = 'on';
+          }
+        }
+      } catch (e) {}
+      if (until && Date.now() / 1000 > until) { el.className = ''; until = 0; }
+    }
+    poll(); setInterval(poll, 2000);
+  })();
+  (function () {
+    // 'Say "Walter"' hint: shown when the no-name-needed follow-up window has run out
+    // and I'm idle, so the owner knows when the wake word is needed. Hidden while I'm
+    // listening, thinking, talking, asleep, muted, or the canvas is open.
+    const el = document.getElementById('sayname');
+    const pills = ['listen', 'micoff'].map((id) => document.getElementById(id));
+    setInterval(() => {
+      const S = window.WALTER_STATE || {};
+      const until = S.followupUntil || 0, now = Date.now() / 1000;
+      const busyPill = pills.some((p) => p && parseFloat(getComputedStyle(p).opacity) > 0.1);
+      const show = until > 0 && now > until && S.state === 'idle' && !S.muted && !busyPill
+        && !document.body.classList.contains('canvas-on') && !document.body.classList.contains('browser-on');
+      el.className = show ? 'on' : '';
+    }, 400);
+  })();
+</script>
+<script>
+/* Hide the mouse pointer after 2 s without movement; show it while the mouse moves. */
+(function () {
+  var root = document.documentElement, t = null;
+  function live() { root.classList.add("mouse-live"); clearTimeout(t); t = setTimeout(function () { root.classList.remove("mouse-live"); }, 2000); }
+  // a drifting TrackPoint/touchpad sends tiny moves all the time: only a real move (24+ px) wakes the pointer
+  var lx = null, ly = null;
+  addEventListener("mousemove", function (e) {
+    if (lx === null) { lx = e.clientX; ly = e.clientY; return; }
+    if (Math.abs(e.clientX - lx) + Math.abs(e.clientY - ly) >= 24) { lx = e.clientX; ly = e.clientY; live(); }
+  }, true);
+  addEventListener("mousedown", live, true);
+  addEventListener("wheel", live, true);
+})();
+</script>
+</body>
+</html>

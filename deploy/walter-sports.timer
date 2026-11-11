@@ -1,0 +1,10 @@
+[Unit]
+Description=Walter: check for live scores every 2 minutes (no network unless a game is on)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=20s
+
+[Install]
+WantedBy=timers.target
