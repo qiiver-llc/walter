@@ -840,7 +840,7 @@
     });
     $("main").dataset.view = view;
     if (TABS.includes(view)) LS.set("tab", view);
-    if (view === "settings") { checkRestart(); checkTextScale(); checkWorkers(); loadFeedback(); checkPresent(); }
+    if (view === "settings") { checkRestart(); checkTextScale(); checkWorkers(); loadFeedback(); checkPresent(); checkCloudLink(); }
     if (view === "settings" || view === "walter") checkLive();
     refreshPanels();
   }
@@ -1140,6 +1140,72 @@
       return { status: r.status, data };
     } finally { clearTimeout(tm); }
   }
+  // ------------------------------------------------------------ Cloud Link (Settings)
+  // GET/POST /api/app/cloud-link (walter/app_cloud_link.py): on with an invite code, off, rotate.
+  // Turning it off from outside the home loses this connection, so it always asks first.
+  let clBusy = false;
+  function clUi(line, on, off) {
+    $("clLine").textContent = line;
+    $("clOff").classList.toggle("hidden", !off);
+    $("clOnRow").classList.toggle("hidden", !on);
+  }
+  async function checkCloudLink(refresh) {
+    if (clBusy) return;
+    try {
+      const r = await rawApi("/api/app/cloud-link" + (refresh ? "?refresh=1" : ""), undefined, refresh ? 15000 : 6000);
+      if (r.status === 401 && token) { unpaired("This device isn't paired any more."); return; }
+      if (r.status === 404 || r.status === 405) { clUi("Needs one restart of Walter before this works.", false, false); return; }
+      if (r.status !== 200) throw new Error("HTTP " + r.status);
+      const d = r.data;
+      if (d.enabled) {
+        let line = `On: ${d.url}/app. Connector ${d.connector}.`;
+        if (d.remote_status === "revoked") line += " The Walter team switched this link off; contact them.";
+        if (d.via_link) line += " You're connected through it right now.";
+        clUi(line, true, false);
+      } else {
+        let line = "Off. The app works on your home network only.";
+        if ((d.existing_tunnel || []).length) line += " This Walter already has its own tunnel; turning Cloud Link on replaces its address.";
+        if (!d.cloudflared) line += " (cloudflared isn't installed yet.)";
+        clUi(line, false, true);
+      }
+    } catch (e) { clUi("Can't reach Walter right now.", false, false); }
+  }
+  async function clAction(body, busyLine, ms) {
+    clBusy = true; $("clLine").textContent = busyLine;
+    ["clOn", "clOffBtn", "clRotate"].forEach((id) => $(id).disabled = true);
+    try { return await rawApi("/api/app/cloud-link", body, ms); }
+    finally { clBusy = false; ["clOn", "clOffBtn", "clRotate"].forEach((id) => $(id).disabled = false); }
+  }
+  $("clOn").onclick = async () => {
+    const code = $("clCode").value.trim();
+    if (!code) { toast("Invite code", "Type the invite code first.", "err", 4); return; }
+    let r = await clAction({ action: "enable", code }, "Setting up your private link... (up to a minute)", 90000).catch(() => null);
+    if (r && r.status === 409 && r.data.code === "existing_tunnel") {
+      if (!confirm(r.data.error + "\n\nGo ahead anyway?")) { checkCloudLink(); return; }
+      r = await clAction({ action: "enable", code, replace: true }, "Setting up your private link...", 90000).catch(() => null);
+    }
+    if (r && r.status === 200) {
+      $("clCode").value = "";
+      toast("Cloud Link is on", `${r.data.url}/app` + (r.data.healthy ? "" : " (first connection can take a minute)"), "", 8);
+    } else toast("Cloud Link", (r && r.data.error) || "Couldn't reach Walter.", "err", 8);
+    checkCloudLink();
+  };
+  $("clOffBtn").onclick = async () => {
+    let r = await clAction({ action: "disable" }, "Checking...", 8000).catch(() => null);
+    if (r && r.status === 409 && r.data.needs_confirm) {
+      if (!confirm(r.data.warning + "\n\nTurn Cloud Link off?")) { checkCloudLink(); return; }
+      r = await clAction({ action: "disable", confirm: true }, "Turning it off...", 30000).catch(() => null);
+    }
+    if (r && r.status === 200) toast("Cloud Link is off", r.data.warning || "The app works on your home network only.", "ok", 6);
+    else if (r) toast("Cloud Link", r.data.error || "Couldn't turn it off.", "err", 6);
+    checkCloudLink();
+  };
+  $("clRotate").onclick = async () => {
+    const r = await clAction({ action: "rotate" }, "Getting a fresh token...", 30000).catch(() => null);
+    if (r && r.status === 200) toast("Token rotated", "Same address; the link reconnects in a few seconds.", "", 5);
+    else toast("Cloud Link", (r && r.data.error) || "Couldn't rotate (you may have been connected through it; try again in a moment).", "err", 6);
+    checkCloudLink(true);
+  };
   function restartLine(text) { $("restartLine").textContent = text; }
   async function checkRestart() {
     if (restartBusy) return;

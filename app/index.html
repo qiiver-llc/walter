@@ -242,6 +242,17 @@
         <a class="btn" href="/firstrun?app=1">Revisit setup steps</a>
         <p class="muted small">Name, place, mic and speaker, privacy choices, extras, Cloud Link.</p>
       </div>
+      <h2>Cloud Link</h2>
+      <div class="stack" id="clBox">
+        <p class="small" id="clLine" aria-live="polite">Checking...</p>
+        <div id="clOff" class="stack hidden">
+          <input id="clCode" placeholder="Invite code" maxlength="40" autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="Cloud Link invite code">
+          <button id="clOn" class="btn primary">Turn on with code</button>
+        </div>
+        <div id="clOnRow" class="row hidden"><button id="clRotate" class="chip">Rotate</button>
+          <button id="clOffBtn" class="btn danger">Turn off</button></div>
+        <p class="muted small">Use this app away from home through a private address for your household. Only the app goes through it. Free during the beta.</p>
+      </div>
       <h2>Projects</h2>
       <div class="stack">
         <div id="pjSetList" class="pj-list"><p class="muted small">Loading...</p></div>
