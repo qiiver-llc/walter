@@ -130,6 +130,7 @@
     frameN: 0,
     jobs: 0, jobsVis: 0,             // background tasks running
     cloudJobs: 0,                    // add-on cloud jobs running (workerslive.js event): cloud-blue satellites
+    cloudLooks: [],                  // ...and each one's add-on look {color, shape, icon_url?} or null
     dim: 1,
     muted: false,                    // the person muted the mic (Space bar)
     hopPhase: 0,
@@ -520,7 +521,7 @@
       if ((Math.sin(a) > 0) !== front) continue;
       const px = Math.cos(a) * ox, py = Math.sin(a) * oy;
       const pulse = 0.75 + 0.25 * Math.sin(t * 4 + i);
-      if (i >= local && S.cloudJobs > 0) { drawCloudSat(px, py, R, t, i, pulse, still); continue; }
+      if (i >= local && S.cloudJobs > 0) { drawCloudSat(px, py, R, t, i, pulse, still, S.cloudLooks[i - local]); continue; }
       ctx.fillStyle = rgb(shade(col, 0.7), 0.25 * S.jobsVis);
       ctx.beginPath(); ctx.arc(px, py, R * 0.07 * pulse, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = rgb(shade(col, 0.8), 0.9 * S.jobsVis);
@@ -529,28 +530,88 @@
     ctx.restore();
   }
 
-  // An add-on cloud job (Teak box, ...): a small cloud-blue rounded diamond with a soft glow
-  // instead of the plain ball; same orbit. Reduced motion: no spin.
+  // An add-on cloud job (Teak box, ...): a small satellite with a soft glow instead of the plain ball; same orbit.
+  // Default: a cloud-blue rounded diamond. An add-on's [workers.look] (walter/addonlook.py) picks the colour, the
+  // shape (diamond|ring|square|triangle|hex|star|drop) and an optional icon drawn on it (a sanitized data: URI,
+  // decoded once and cached; if it fails to load, just the shape). Reduced motion: no wobble.
   const CLOUD_SAT = [120, 190, 255];
-  function drawCloudSat(px, py, R, t, i, pulse, still) {
+  const SAT_SHAPES = ["diamond", "ring", "square", "triangle", "hex", "star", "drop"];
+  const SAT_ICON_RE = /^data:image\/(svg\+xml|png|x-icon|vnd\.microsoft\.icon);base64,[A-Za-z0-9+/=]+$/;
+  const satIcons = new Map();       // data URI -> Image (or null when it failed)
+  function satIcon(url) {
+    if (typeof url !== "string" || url.length > 20000 || !SAT_ICON_RE.test(url)) return null;
+    if (satIcons.has(url)) { const im = satIcons.get(url); return im && im.complete && im.naturalWidth ? im : null; }
+    if (satIcons.size > 16) satIcons.clear();
+    const im = new Image();
+    im.onerror = () => satIcons.set(url, null);
+    im.src = url;
+    satIcons.set(url, im);
+    return null;
+  }
+  function hexRgb(c) {
+    if (typeof c !== "string" || !/^#[0-9a-fA-F]{6}$/.test(c)) return null;
+    return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)];
+  }
+  function satPath(shape, h) {
+    const rr = h * 0.35;
+    ctx.beginPath();
+    if (shape === "ring") { ctx.arc(0, 0, h * 1.05, 0, Math.PI * 2); return; }
+    if (shape === "triangle") { ctx.moveTo(0, -h * 1.25); ctx.lineTo(h * 1.15, h * 0.75); ctx.lineTo(-h * 1.15, h * 0.75); ctx.closePath(); return; }
+    if (shape === "hex" || shape === "star") {
+      const n = shape === "hex" ? 6 : 10;
+      for (let k = 0; k < n; k++) {
+        const a = -Math.PI / 2 + (k * Math.PI * 2) / n, r = shape === "hex" ? h * 1.15 : (k % 2 ? h * 0.6 : h * 1.35);
+        k ? ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r) : ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      ctx.closePath(); return;
+    }
+    if (shape === "drop") {
+      ctx.moveTo(0, -h * 1.4);
+      ctx.bezierCurveTo(h * 0.9, -h * 0.35, h * 1.05, h * 0.2, h * 1.05, h * 0.3);
+      ctx.arc(0, h * 0.3, h * 1.05, 0, Math.PI);
+      ctx.bezierCurveTo(-h * 1.05, h * 0.2, -h * 0.9, -h * 0.35, 0, -h * 1.4);
+      ctx.closePath(); return;
+    }
+    // diamond (a rounded square turned 45 degrees) and square
+    ctx.moveTo(-h + rr, -h); ctx.arcTo(h, -h, h, h, rr); ctx.arcTo(h, h, -h, h, rr);
+    ctx.arcTo(-h, h, -h, -h, rr); ctx.arcTo(-h, -h, h, -h, rr); ctx.closePath();
+  }
+  function drawCloudSat(px, py, R, t, i, pulse, still, look) {
     const v = S.jobsVis;
-    ctx.fillStyle = rgb(CLOUD_SAT, 0.22 * v);                    // glow
+    const c = (look && hexRgb(look.color)) || CLOUD_SAT;
+    const shape = look && SAT_SHAPES.includes(look.shape) ? look.shape : "diamond";
+    const icon = look ? satIcon(look.icon_url) : null;
+    ctx.fillStyle = rgb(c, 0.22 * v);                            // glow
     ctx.beginPath(); ctx.arc(px, py, R * 0.075 * pulse, 0, Math.PI * 2); ctx.fill();
     ctx.save();
     ctx.translate(px, py);
-    ctx.rotate(Math.PI / 4 + (still ? 0 : Math.sin(t * 0.8 + i) * 0.35));
-    const h = R * 0.034, rr = h * 0.35;                          // half size, corner radius
-    ctx.beginPath();
-    ctx.moveTo(-h + rr, -h); ctx.arcTo(h, -h, h, h, rr); ctx.arcTo(h, h, -h, h, rr);
-    ctx.arcTo(-h, h, -h, -h, rr); ctx.arcTo(-h, -h, h, -h, rr); ctx.closePath();
-    ctx.fillStyle = rgb([200, 230, 255], 0.92 * v);
-    ctx.fill();
-    ctx.strokeStyle = rgb(CLOUD_SAT, 0.95 * v);
-    ctx.lineWidth = Math.max(1, R * 0.008);
-    ctx.stroke();
+    const wob = still ? 0 : Math.sin(t * 0.8 + i) * 0.35;
+    ctx.rotate((shape === "diamond" ? Math.PI / 4 : 0) + (icon ? wob * 0.3 : wob));
+    const h = R * (icon ? 0.04 : 0.034);                         // half size; a bit bigger to carry an icon
+    satPath(shape, h);
+    if (shape === "ring") {
+      ctx.fillStyle = rgb(c, 0.25 * v); ctx.fill();
+      ctx.strokeStyle = rgb(c, 0.95 * v); ctx.lineWidth = Math.max(1.5, R * 0.012); ctx.stroke();
+    } else {
+      ctx.fillStyle = rgb(c.map((x) => x + (255 - x) * 0.55), 0.92 * v);   // pale tint of the colour
+      ctx.fill();
+      ctx.strokeStyle = rgb(c, 0.95 * v);
+      ctx.lineWidth = Math.max(1, R * 0.008);
+      ctx.stroke();
+    }
+    if (icon) {
+      if (shape === "diamond") ctx.rotate(-Math.PI / 4);
+      const s = h * 1.3;
+      ctx.globalAlpha = v;
+      ctx.drawImage(icon, -s / 2, -s / 2, s, s);
+    }
     ctx.restore();
   }
-  window.addEventListener("walter-cloud-jobs", (e) => { S.cloudJobs = Math.max(0, (e.detail && e.detail.n) | 0); });
+  window.addEventListener("walter-cloud-jobs", (e) => {
+    const d = e.detail || {};
+    S.cloudJobs = Math.max(0, d.n | 0);
+    S.cloudLooks = Array.isArray(d.looks) ? d.looks.slice(0, 32) : [];
+  });
 
   let last = now();
   window.WALTER_STATE = S; // read-only peek for small add-ons (say-name hint)

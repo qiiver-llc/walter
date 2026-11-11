@@ -24,6 +24,8 @@
   #workers .job.fade { opacity: 0.25; }
   .wl-cloud { display: inline-block; width: 1.25em; height: 0.8em; margin-right: 0.35em; vertical-align: -0.05em;
     opacity: 0.75; fill: currentColor; }
+  .wl-icon { display: inline-block; width: 1em; height: 1em; margin-right: 0.35em; vertical-align: -0.12em;
+    object-fit: contain; }
   body.wl-night #workers { filter: saturate(0.4); opacity: 0.55 !important; }
   body.wl-dark #workers { opacity: 0 !important; visibility: hidden; }
   #dash .wlive { display: none; }
@@ -61,7 +63,19 @@
   };
   // cloud jobs from an add-on ([workers] in its addon.toml, walter/cloudworkers.py): a little cloud before the title
   const CLOUD = '<svg class="wl-cloud" viewBox="0 0 24 16" aria-label="cloud"><path d="M19 15H6a5 5 0 0 1-.6-9.96A7 7 0 0 1 18.7 6 4.5 4.5 0 0 1 19 15z"/></svg>';
-  const cloudMark = (w) => (w.cloud ? CLOUD : "");
+  // An add-on's own look ([workers.look], walter/addonlook.py): its icon (a sanitized data: URI) instead of the
+  // cloud, or the cloud tinted in its colour. Anything that doesn't look exactly right is ignored.
+  const ICON_RE = /^data:image\/(svg\+xml|png|x-icon|vnd\.microsoft\.icon);base64,[A-Za-z0-9+/=]+$/;
+  const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+  function cloudMark(w) {
+    if (!w.cloud) return "";
+    const lk = w.look || {}, name = esc(w.addon_name || w.addon || "cloud");
+    if (typeof lk.icon_url === "string" && lk.icon_url.length < 20000 && ICON_RE.test(lk.icon_url))
+      return '<img class="wl-icon" alt="' + name + '" title="' + name + '" src="' + lk.icon_url + '">';
+    const col = typeof lk.color === "string" && COLOR_RE.test(lk.color) ? ' style="color:' + lk.color + ';opacity:0.9"' : "";
+    return CLOUD.replace('class="wl-cloud"', 'class="wl-cloud"' + col).replace('aria-label="cloud"', 'aria-label="' + name + '"');
+  }
+  const cloudAct = (w, act) => (w.cloud && (w.addon_name || w.addon) ? (w.addon_name || w.addon) + (act ? " · " + act : "") : act);
   const inHours = (h, r) => r[0] > r[1] ? (h >= r[0] || h < r[1]) : (h >= r[0] && h < r[1]);
 
   async function load() {
@@ -111,6 +125,7 @@
         const mark = w.status === "done" ? "✓ " : w.status === "queued" ? "⏳ " : w.status === "running" ? "" : "✗ ";
         let act = w.activity || "";
         if (w.status === "running" && w.files) act += (act ? " · " : "") + w.files + (w.files === 1 ? " file" : " files");
+        act = cloudAct(w, act);
         h += '<div class="job ' + cls + (w.since > FADE_AFTER ? " fade" : "") + '"><span class="tt">' + mark + cloudMark(w) + esc(w.title) +
           '<span class="t">' + esc(w.el) + "</span></span>" + (act ? '<span class="act">' + esc(act) + "</span>" : "") + "</div>";
       }
@@ -127,18 +142,21 @@
       const cls = w.status === "running" ? "" : w.status === "queued" ? "queued" : w.status === "done" ? "done" : "failed";
       const mark = w.status === "done" ? "✓ " : w.status === "queued" ? "⏳ " : w.status === "running" ? "" : "✗ ";
       h += '<div class="r ' + cls + (w.since > FADE_AFTER ? " fade" : "") + '"><span class="ti">' + mark + cloudMark(w) + esc(w.title) +
-        '</span><span class="ac">' + esc(w.activity || "") + '</span><span class="el">' + esc(w.el) + "</span></div>";
+        '</span><span class="ac">' + esc(cloudAct(w, w.activity || "")) + '</span><span class="el">' + esc(w.el) + "</span></div>";
     }
     card.innerHTML = h; card.classList.add("on");
   }
 
-  // add-on cloud jobs: walter.js draws them as cloud-blue satellites next to the local ones
-  let lastCloud = -1;
+  // add-on cloud jobs: walter.js draws them as satellites next to the local ones, each in its add-on's look
+  // (detail.looks[i] = {color, shape, icon_url?} or null for the default cloud-blue diamond)
+  let lastCloud = "";
   function tellCloud(d) {
-    const n = (d.workers || []).filter((w) => w.status === "running" && w.cloud).length;
-    if (n === lastCloud) return;
-    lastCloud = n;
-    window.dispatchEvent(new CustomEvent("walter-cloud-jobs", { detail: { n } }));
+    const cw = (d.workers || []).filter((w) => w.status === "running" && w.cloud);
+    const looks = cw.map((w) => (w.look && typeof w.look === "object" ? w.look : null));
+    const key = JSON.stringify(looks);
+    if (key === lastCloud) return;
+    lastCloud = key;
+    window.dispatchEvent(new CustomEvent("walter-cloud-jobs", { detail: { n: cw.length, looks } }));
   }
 
   async function poll() {
