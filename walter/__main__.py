@@ -212,6 +212,9 @@ async def amain(args):
     if apphub is not None:
         from .app_server import watch_app
         loops.append(asyncio.create_task(watch_app(apphub)))
+    # Cloud Link (docs/CLOUD-LINK.md): a signed heartbeat every 6 h while it is on
+    from .cloud_link import heartbeat_loop as cloud_link_heartbeat
+    loops.append(asyncio.create_task(cloud_link_heartbeat(cfg)))
     if getattr(hub, "cluster", None) is not None:
         # other full installs as one brain (docs/CLUSTER.md); idle with no peers
         loops.append(asyncio.create_task(hub.cluster.run()))

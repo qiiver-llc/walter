@@ -300,6 +300,15 @@ class AppCfg:
 
 
 @dataclass
+class CloudLinkCfg:
+    """Cloud Link: the app from anywhere via a private <slug>.wallter.app tunnel
+    (walter/cloud_link.py, docs/CLOUD-LINK.md). Off until `walterctl cloud-link enable CODE`."""
+    api_base: str = "https://api.wallter.app"   # the Cloud Link service
+    heartbeat_h: float = 6.0           # signed "still here" ping while it is on
+    health_timeout_s: float = 60.0     # how long enable waits for https://<host>/app/ to answer
+
+
+@dataclass
 class FacesCfg:
     """One brain, many faces (walter/faces.py, docs/FACES.md)."""
     enabled: bool = True
@@ -370,6 +379,7 @@ class Config:
     senses: SensesCfg = field(default_factory=SensesCfg)
     dashboard: DashboardCfg = field(default_factory=DashboardCfg)
     app: AppCfg = field(default_factory=AppCfg)
+    cloud_link: CloudLinkCfg = field(default_factory=CloudLinkCfg)
     faces: FacesCfg = field(default_factory=FacesCfg)
     cluster: ClusterCfg = field(default_factory=ClusterCfg)
     feedback: FeedbackCfg = field(default_factory=FeedbackCfg)

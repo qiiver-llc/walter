@@ -49,6 +49,8 @@ Walter uses this himself (it's on his PATH), and you can use it over SSH.
                                         does the same); walterctl unmute to undo
   walterctl podcast follow|list|latest|play|pause|resume|stop|skip|back|speed|status
                                         podcasts from public RSS (walterctl podcast help)
+  walterctl cloud-link enable CODE [--replace] | status | rotate | disable
+                                        reach the app from anywhere (docs/CLOUD-LINK.md)
   walterctl ha status|connect|list|areas|state|on|off|brightness|temp|scene|alias ...
                                         Home Assistant bridge, optional (walterctl ha help)
   walterctl radio play "country"|"WNYC"|NAME, stop|pause|resume|volume|status|list|favorites
@@ -2403,6 +2405,14 @@ def main(argv):
         _repo()
         from walter import media
         sys.exit(media.cli(rest))
+    elif cmd in ("cloud-link", "cloudlink"):
+        root = _repo()
+        py = root / ".venv" / "bin" / "python"   # needs the cryptography package (in the venv)
+        if py.exists() and os.path.realpath(sys.executable) != os.path.realpath(str(py)):
+            env = dict(os.environ, PYTHONPATH=str(root) + os.pathsep + os.environ.get("PYTHONPATH", ""))
+            os.execve(str(py), [str(py), "-m", "walter.cloud_link", *rest], env)
+        from walter import cloud_link
+        sys.exit(cloud_link.cli(rest))
     elif cmd in ("ha", "homeassistant"):
         _repo()
         from walter import homeassistant
