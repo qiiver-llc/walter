@@ -37,6 +37,7 @@ WALL = "wall"                       # the wall face's id until faces.py gives fa
 PRIVACY = ("normal", "walled")
 KEYS = ("name", "aliases", "repos", "notes_dir", "backlog", "google_account", "calendars", "goals",
         "budget_share", "privacy", "journal", "pipeline")
+TURN_TTL_S = 15 * 60                 # a routine's project tag outlives its turn by at most this
 PIPELINES = ("release", "site", "none", "auto")   # the cockpit's ship pipeline preset (walter/cockpit.py)
 LIST_KEYS = ("aliases", "repos", "calendars", "goals")
 
@@ -93,11 +94,13 @@ class WorkspaceStore:
     DEFAULT_NOTES_ROOT: Path | None = None
     DEFAULT_TAGS: Path | None = None
     DEFAULT_FACE_OUT: Path | None = None   # face/dashboard-workspace.json (tests point it elsewhere)
+    DEFAULT_TURN: Path | None = None       # turn-workspace.json: a routine's project for the turn in progress
 
-    def __init__(self, path=None, state_path=None, notes_root=None, tags_path=None):
+    def __init__(self, path=None, state_path=None, notes_root=None, tags_path=None, turn_path=None):
         data = Path(os.environ.get("WALTER_DATA") or DATA)
         self.path = Path(path or self.DEFAULT_PATH or data / "workspaces.json")
         self.state_path = Path(state_path or self.DEFAULT_STATE or data / "workspace-state.json")
+        self.turn_path = Path(turn_path or self.DEFAULT_TURN or data / "turn-workspace.json")
         self.notes_root = Path(notes_root or self.DEFAULT_NOTES_ROOT or data / "home" / "workspaces")
         self.tags_path = Path(tags_path or self.DEFAULT_TAGS or data / "task-workspaces.json")
 
@@ -294,6 +297,49 @@ class WorkspaceStore:
         return d
 
     # ------------------------------------------------------------ worker tags
+    def set_turn_workspace(self, wid: str | None, ttl: float = TURN_TTL_S) -> None:
+        """A routine / do-later job that belongs to a project is running as a brain turn: workers that
+        turn starts without --workspace are tagged with `wid` (walterctl task reads it). None clears it."""
+        try:
+            if wid:
+                _write_json(self.turn_path, {"workspace": wid, "until": time.time() + ttl})
+            elif self.turn_path.exists():
+                self.turn_path.unlink()
+        except OSError:
+            pass
+
+    def turn_workspace(self) -> str | None:
+        d = _read_json(self.turn_path, {}) if self.turn_path.exists() else {}
+        wid = d.get("workspace") if isinstance(d, dict) else None
+        try:
+            fresh = float(d.get("until") or 0) > time.time()
+        except (TypeError, ValueError):
+            fresh = False
+        w = self.get(wid) if wid and fresh else None
+        return w["id"] if w else None
+
+    def task_default(self, face_id: str = WALL) -> str | None:
+        """The tag for a new worker started without one: the running routine's project, else the face's
+        current workspace. None only when workspaces aren't defined (single-workspace install)."""
+        if not self.defined():
+            return None
+        return self.turn_workspace() or self.current_id(face_id)
+
+    def repo_workspace(self, path) -> str | None:
+        """The workspace that owns a repo/folder (e.g. ~/walter), else the default one; None when
+        workspaces aren't defined."""
+        if not self.defined():
+            return None
+        w = self.owner_of(path)
+        return w["id"] if w else self.default_id()
+
+    def valid_id(self, wid) -> str | None:
+        """Whitelist check for API input: exactly one of the defined workspace ids, else None (also when
+        workspaces aren't defined: then nothing can belong to a project)."""
+        if not isinstance(wid, str) or not wid or len(wid) > 40 or not self.defined():
+            return None
+        return wid if wid in self.ids() else None
+
     def tags(self) -> dict:
         return _read_json(self.tags_path, {})
 

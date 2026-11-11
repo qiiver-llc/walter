@@ -23,10 +23,13 @@ Walter uses this himself (it's on his PATH), and you can use it over SSH.
   walterctl every weekdays 07:30 "morning briefing: weather, calendar, news"
                                         recurring routine. days: daily, weekdays,
                                         weekends, or a list like mon,wed,fri
+                                        remind/later/every --workspace NAME: belongs to that
+                                        project (turn headed with it, its workers tagged)
   walterctl reminders                   list reminders and routines
   walterctl cancel 3                    cancel reminder/routine #3
   walterctl pause 3 | resume 3          pause / resume routine #3 (stays listed, doesn't run)
   walterctl task [--workspace NAME] [--on NAME|best] "title" "full instructions"
+                                        (no --workspace: the running routine's project, else the wall's)
   walterctl cluster status|peers|pair [--cancel]|join URL CODE [--url MY_URL]|leave|promote NAME|
             remove NAME|sync|conflicts|jobs|assign NAME WS|none|discover
                                         several full installs as one brain (docs/CLUSTER.md)
@@ -811,7 +814,8 @@ def _ws_line(w, cur=None):
 
 
 def _task_workspace(name, quiet=False):
-    """(store, workspace id) for a new worker: --workspace NAME, else this face's current one.
+    """(store, workspace id) for a new worker: --workspace NAME, else the running routine's project, else
+    this face's current one.
     (None, None) when no workspaces are defined (single-workspace behaviour, nothing changes)."""
     sys.path.insert(0, str(_repo()))
     try:
@@ -828,7 +832,29 @@ def _task_workspace(name, quiet=False):
         if not w:
             sys.exit(f"walterctl: no workspace '{name}' (walterctl workspace list)")
         return st, w["id"]
-    return st, st.current_id(WS.current_face_id())
+    # a routine/later job of a project is running: its workers belong to that project
+    return st, st.task_default(WS.current_face_id())
+
+
+def _schedule_workspace(rest):
+    """remind / later / every --workspace NAME (anywhere in the args): ({"workspace": id} or {}, other args).
+    No flag = no project (global, as before)."""
+    name, out, it = None, [], iter(rest)
+    for a in it:
+        if a in ("--workspace", "-w"):
+            name = next(it, None) or sys.exit("walterctl: --workspace needs a name")
+        elif a.startswith("--workspace="):
+            name = a.split("=", 1)[1]
+        else:
+            out.append(a)
+    if not name or name.lower() in ("none", "-"):
+        return {}, out
+    st, wid = _task_workspace(name)
+    return ({"workspace": wid} if wid else {}), out
+
+
+def _ws_suffix(r):
+    return f"  (project {r['workspace']})" if r.get("workspace") else ""
 
 
 def workspace_cmd(rest):
@@ -2126,24 +2152,28 @@ def main(argv):
     elif cmd == "action":
         call("POST", "/api/face", {"action": rest[0]})
     elif cmd == "remind":
+        ws, rest = _schedule_workspace(rest)
         if len(rest) < 2:
-            sys.exit('usage: walterctl remind <when> "<text>"')
+            sys.exit('usage: walterctl remind [--workspace NAME] <when> "<text>"')
         due = parse_when(rest[0])
-        r = call("POST", "/api/remind", {"due": due, "text": " ".join(rest[1:])})
-        print(f"#{r['id']} at {dt.datetime.fromtimestamp(due):%a %H:%M}: {r['text']}")
+        r = call("POST", "/api/remind", {"due": due, "text": " ".join(rest[1:]), **ws})
+        print(f"#{r['id']} at {dt.datetime.fromtimestamp(due):%a %H:%M}: {r['text']}{_ws_suffix(r)}")
         _flash("Reminder set", f"{_when12(due)}: {r['text']}")
     elif cmd == "later":
+        ws, rest = _schedule_workspace(rest)
         if len(rest) < 2:
-            sys.exit('usage: walterctl later <when> "<instruction>"')
+            sys.exit('usage: walterctl later [--workspace NAME] <when> "<instruction>"')
         due = parse_when(rest[0])
-        r = call("POST", "/api/remind", {"due": due, "text": " ".join(rest[1:]), "kind": "do"})
-        print(f"#{r['id']} at {dt.datetime.fromtimestamp(due):%a %H:%M}: {r['text']}")
+        r = call("POST", "/api/remind", {"due": due, "text": " ".join(rest[1:]), "kind": "do", **ws})
+        print(f"#{r['id']} at {dt.datetime.fromtimestamp(due):%a %H:%M}: {r['text']}{_ws_suffix(r)}")
     elif cmd == "every":
+        ws, rest = _schedule_workspace(rest)
         if len(rest) < 3 or not re.fullmatch(r"\d{1,2}:\d{2}", rest[1]):
-            sys.exit('usage: walterctl every <daily|weekdays|weekends|mon,wed> <HH:MM> "<instruction>"')
+            sys.exit('usage: walterctl every [--workspace NAME] <daily|weekdays|weekends|mon,wed> <HH:MM> "<instruction>"')
         r = call("POST", "/api/remind", {"text": " ".join(rest[2:]), "kind": "do",
-                                         "repeat": {"days": parse_days(rest[0]), "time": rest[1]}})
-        print(f"#{r['id']} {rest[0]} at {rest[1]}, next {dt.datetime.fromtimestamp(r['due']):%a %d %b %H:%M}: {r['text']}")
+                                         "repeat": {"days": parse_days(rest[0]), "time": rest[1]}, **ws})
+        print(f"#{r['id']} {rest[0]} at {rest[1]}, next {dt.datetime.fromtimestamp(r['due']):%a %d %b %H:%M}: "
+              f"{r['text']}{_ws_suffix(r)}")
     elif cmd == "reminders":
         for r in call("GET", "/api/reminders"):
             rep = r.get("repeat")
@@ -2151,7 +2181,8 @@ def main(argv):
                 f"{dt.datetime.fromtimestamp(r['due']):%a %d %b %H:%M}"
             kind = "do" if r.get("kind") == "do" else "remind"
             paused = "  (paused)" if r.get("enabled") is False else ""
-            print(f"#{r['id']}  [{kind}]  {when}{paused}  {r['text']}")
+            proj = f"  [{r['workspace']}]" if r.get("workspace") else ""
+            print(f"#{r['id']}  [{kind}]  {when}{paused}{proj}  {r['text']}")
     elif cmd in ("pause", "resume"):
         if len(rest) != 1 or not rest[0].lstrip("#").isdigit():
             sys.exit(f"usage: walterctl {cmd} <routine id> (walterctl reminders)")

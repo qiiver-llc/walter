@@ -1,9 +1,11 @@
 """Companion app Schedule screen: everything that runs on a timer, in one place (the owner asked 11 Nov 10:48).
 
 GET  /api/app/schedule
-       {now, reminders: [...], routines: [...], later: [...], loops: {...}, timers: [...]}
-       reminders  one-off "tell me" items          {id, kind, due, text}
-       later      one-off "do this later" jobs     {id, kind, due, text}
+       {now, reminders: [...], routines: [...], later: [...], loops: {...}, timers: [...],
+        workspaces: [{id, name, walled}], current_workspace: id|null}
+       ?workspace=ID shows only that project's items (?workspace=none: the ones without a project)
+       reminders  one-off "tell me" items          {id, kind, due, text, workspace}
+       later      one-off "do this later" jobs     {id, kind, due, text, workspace}
        routines   recurring (`walterctl every`)    {id, kind, due, text, days: [0..6], days_label, time,
                                                     enabled, role}   role: briefing | wrapup | self_review | ""
        loops      {heartbeat: {minutes, min, max, quiet_hours: [start, end]},
@@ -11,9 +13,12 @@ GET  /api/app/schedule
        timers     systemd --user timers, READ-ONLY  {name, description, every, next, last}
        Text is sent in full (routines are often long internal instructions); the app shows the first line.
 POST /api/app/schedule
-       {action: "add",    type: "reminder"|"later", text, time: "HH:MM", date?: "YYYY-MM-DD"}
-       {action: "add",    type: "routine", text, time, days, kind?: "do"|"remind"}
-       {action: "edit",   id, text?, time?, date?, days?}     (routines need time + days together)
+       {action: "add",    type: "reminder"|"later", text, time: "HH:MM", date?: "YYYY-MM-DD", workspace?}
+       {action: "add",    type: "routine", text, time, days, kind?: "do"|"remind", workspace?}
+       {action: "edit",   id, text?, time?, date?, days?, workspace?}   (routines need time + days together)
+       workspace: a workspace id from workspaces.json (whitelist; unknown = 400 "unknown_workspace") or
+       null / "" for none (global). A routine/later job with one runs headed with that project and its
+       workers are tagged with it; a reminder just names it.
        {action: "pause"|"resume", id}                          routines only ("enabled": false in the store)
        {action: "delete", id, confirm: true}                   without confirm: 409 code "confirm"
        {action: "heartbeat", minutes: 5..120}                  [life] heartbeat_minutes, live (config set path)
@@ -164,6 +169,18 @@ def _bool(d: dict, key: str, default=None):
     return v
 
 
+_WS_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
+
+
+def parse_workspace(v):
+    """Shape only: None / "" = no project, else a workspace-id-looking string (apply checks it exists)."""
+    if v is None or v == "":
+        return None
+    if not isinstance(v, str) or not _WS_ID.fullmatch(v):
+        raise ScheduleError("workspace must be one of the workspace ids", 400, "unknown_workspace")
+    return v
+
+
 def parse(d) -> dict:
     """Strict validation of a POST body (shape only; the store checks come in apply)."""
     if not isinstance(d, dict):
@@ -200,7 +217,8 @@ def parse(d) -> dict:
         typ = d.get("type")
         if typ not in TYPES:
             raise ScheduleError("type must be reminder, later or routine")
-        req = {"action": act, "type": typ, "text": clean_text(d.get("text")), "time": parse_time(d.get("time"))}
+        req = {"action": act, "type": typ, "text": clean_text(d.get("text")), "time": parse_time(d.get("time")),
+               "workspace": parse_workspace(d.get("workspace"))}
         if typ == "routine":
             kind = d.get("kind", "do")
             if kind not in ("do", "remind"):
@@ -225,8 +243,10 @@ def parse(d) -> dict:
             if not isinstance(d["date"], str) or not DATE.fullmatch(d["date"]):
                 raise ScheduleError("date must be YYYY-MM-DD")
             req["date"] = d["date"]
+        if "workspace" in d:
+            req["workspace"] = parse_workspace(d["workspace"])
         if len(req) == 2:
-            raise ScheduleError("nothing to change: send text, time, days or date")
+            raise ScheduleError("nothing to change: send text, time, days, date or workspace")
     return req
 
 
@@ -275,8 +295,9 @@ def read_timers(run=_run) -> list[dict]:
 # ------------------------------------------------------------------ the schedule
 class Schedule:
     def __init__(self, reminders, cfg=None, live=None, timers=read_timers, now=time.time,
-                 mono=time.monotonic, backup_dir=None):
+                 mono=time.monotonic, backup_dir=None, workspaces=None):
         self.reminders = reminders
+        self._ws = workspaces      # callable -> WorkspaceStore (tests pass their own); default: the real one
         self.cfg = cfg
         home = getattr(getattr(cfg, "brain", None), "home", None)
         self.initiative = hb.InitiativeFile(home, backup_dir, now=now) if home and backup_dir else None
@@ -286,6 +307,33 @@ class Schedule:
         self.mono = mono
         self._hits: list[float] = []
         self._tcache: tuple[float, list] | None = None
+
+    def ws_store(self):
+        if self._ws is not None:
+            return self._ws()
+        from .workspaces import WorkspaceStore
+        return WorkspaceStore()
+
+    def projects(self) -> tuple[list[dict], str | None]:
+        """([{id, name, walled}], the wall's current id): names only, walled ones too. ([], None) when
+        workspaces aren't defined (the app then hides the project bits)."""
+        try:
+            st = self.ws_store()
+            if not st.defined():
+                return [], None
+            return ([{"id": w["id"], "name": w["name"], "walled": w["privacy"] == "walled"} for w in st.all()],
+                    st.current_id())
+        except Exception:  # noqa: BLE001
+            log.exception("schedule: couldn't read the workspaces")
+            return [], None
+
+    def check_workspace(self, wid):
+        """Whitelist: None, or an id that exists in workspaces.json."""
+        if wid is None:
+            return None
+        if self.ws_store().valid_id(wid) is None:
+            raise ScheduleError(f"there's no project '{wid}'", 400, "unknown_workspace")
+        return wid
 
     def rate_ok(self) -> bool:
         t = self.mono()
@@ -323,7 +371,7 @@ class Schedule:
         rem, later, routines = [], [], []
         for i in sorted(self.reminders.items, key=lambda x: x.get("due", 0)):
             base = {"id": i.get("id"), "kind": i.get("kind", "remind"), "due": i.get("due"),
-                    "text": str(i.get("text") or "")}
+                    "text": str(i.get("text") or ""), "workspace": i.get("workspace") or None}
             rep = i.get("repeat")
             if rep:
                 routines.append({**base, "days": list(rep.get("days") or []), "days_label": days_label(rep.get("days") or []),
@@ -345,8 +393,22 @@ class Schedule:
                                "editable": self.initiative is not None},
                  "sleep_review": {"on": bool(getattr(life, "sleep_review", False))},
                  "routines": roles}
+        projects, cur = self.projects()
         return {"now": self.now(), "reminders": rem, "later": later, "routines": routines, "loops": loops,
-                "timers": self.timers() if timers is None else timers}
+                "timers": self.timers() if timers is None else timers,
+                "workspaces": projects, "current_workspace": cur}
+
+    @staticmethod
+    def only(state: dict, wid: str | None) -> dict:
+        """The state with just one project's reminders / later jobs / routines ("none" = no project)."""
+        if not wid:
+            return state
+        want = None if wid == "none" else wid
+        out = dict(state)
+        for k in ("reminders", "later", "routines"):
+            out[k] = [i for i in state.get(k, []) if (i.get("workspace") or None) == want]
+        out["filter"] = wid
+        return out
 
     # -- changes
     def _item(self, rid: int) -> dict:
@@ -414,12 +476,15 @@ class Schedule:
         if act == "add":
             if len(self.reminders.items) >= ITEMS_MAX:
                 raise ScheduleError(f"{ITEMS_MAX} scheduled items at most", 409, "too_many")
+            ws = self.check_workspace(req.get("workspace"))
             try:
                 if req["type"] == "routine":
-                    it = self.reminders.add(None, req["text"], req["kind"], {"days": req["days"], "time": req["time"]})
+                    it = self.reminders.add(None, req["text"], req["kind"], {"days": req["days"], "time": req["time"]},
+                                            workspace=ws)
                 else:
                     due = due_at(req["time"], req.get("date"), self.now())
-                    it = self.reminders.add(due, req["text"], "do" if req["type"] == "later" else "remind")
+                    it = self.reminders.add(due, req["text"], "do" if req["type"] == "later" else "remind",
+                                            workspace=ws)
             except (ValueError, KeyError) as e:
                 if isinstance(e, ScheduleError):
                     raise
@@ -442,6 +507,8 @@ class Schedule:
         kw = {}
         if "text" in req:
             kw["text"] = req["text"]
+        if "workspace" in req:
+            kw["workspace"] = self.check_workspace(req["workspace"])
         if it.get("repeat"):
             if "date" in req:
                 raise ScheduleError("routines use days, not a date")
@@ -479,7 +546,10 @@ def add_routes(routes, apphub, json_body, reminders, cfg=None, conductor=None) -
     async def app_schedule(request):
         apphub.auth(request)
         timers = await asyncio.to_thread(sc.timers)
-        return web.json_response(sc.state(timers))
+        want = request.query.get("workspace") or None
+        if want is not None and want != "none" and sc.ws_store().valid_id(want) is None:
+            return web.json_response({"error": "no such project", "code": "unknown_workspace"}, status=400)
+        return web.json_response(Schedule.only(sc.state(timers), want))
 
     @routes.post("/api/app/schedule")
     async def app_schedule_set(request):

@@ -1192,13 +1192,13 @@ class Conductor:
         self.request_counts["asides_dropped"] += len(self._asides) - len(asides)
         self._asides = asides
 
-    def _context_notes(self, source: str, live: dict) -> str:
+    def _context_notes(self, source: str, live: dict, meta: dict | None = None) -> str:
         """Lines put in front of the brain's message: what was done without it,
         room chatter heard while it was busy, and requests still unanswered."""
         self._expire()
         out = []
         person = source in ("voice", "text", "ask", "app", "face")
-        wnote = self._workspace_note()
+        wnote = self._workspace_note(source, meta)
         if wnote:
             out.append(wnote)
         fnote = self._focus_note()
@@ -1322,10 +1322,20 @@ class Conductor:
     # ---- workspaces (walter/workspaces.py): which one this face is in
     FACE_ID = workspaces_mod.WALL
 
-    def _workspace_note(self) -> str:
-        """"[workspace: Acme]" at the top of every turn once workspaces are defined."""
+    def _workspace_note(self, source: str = "", meta: dict | None = None) -> str:
+        """"[workspace: Acme]" at the top of every turn once workspaces are defined. A routine / do-later
+        job that belongs to a project is headed with THAT project, and workers it starts are tagged with
+        it (walterctl task reads the turn's project); every other turn clears that."""
         try:
-            return workspaces_mod.WorkspaceStore().header(self.FACE_ID)
+            st = workspaces_mod.WorkspaceStore()
+            wid = (meta or {}).get("workspace") if source == "routine" else None
+            w = st.get(wid) if wid and st.defined() else None
+            st.set_turn_workspace(w["id"] if w else None)
+            if w:
+                return (f"[workspace: {w['name']}" + (" (walled)" if w["privacy"] == "walled" else "")
+                        + f"; this scheduled job belongs to it, so `walterctl task` tags its workers "
+                        f"'{w['id']}' (the wall is on {st.current(self.FACE_ID)['name']})]")
+            return st.header(self.FACE_ID)
         except Exception:
             log.exception("workspace header")
             return ""
@@ -1630,6 +1640,11 @@ class Conductor:
             finally:
                 self._turn = None
                 self.busy = False
+                if source == "routine" and (meta or {}).get("workspace"):
+                    try:   # the routine's project tag ends with its turn
+                        workspaces_mod.WorkspaceStore().set_turn_workspace(None)
+                    except Exception:  # noqa: BLE001
+                        pass
                 if self.state not in ("speaking",):
                     self.set_state("listening" if time.time() < self.followup_until and not self.sleeping
                                    else self.resting_state())
@@ -1762,13 +1777,15 @@ class Conductor:
         if source == "text":
             return f"[typed on your keyboard at {now}]\n{text}"
         if source == "reminder":
-            return (f"[reminder due now, {now}] {text}\n"
+            proj = f"; project: {meta['workspace_name']}" if meta.get("workspace_name") else ""
+            return (f"[reminder due now, {now}{proj}] {text}\n"
                     "Tell the person about it out loud, briefly and naturally.")
         if source == "heartbeat":
             # re-read each beat: the app's Schedule screen edits [life] heartbeat_prompt live
             return heartbeat_mod.render(getattr(self.cfg.life, "heartbeat_prompt", ""), now, self.cfg.brain.home)
         if source == "routine":
-            return (f"[scheduled routine due now, {now}] {text}\n"
+            proj = f"; project: {meta['workspace_name']}" if meta.get("workspace_name") else ""
+            return (f"[scheduled routine due now, {now}{proj}] {text}\n"
                     "Carry this out now. Anything meant for the person, say out loud, briefly.")
         if source == "task":
             return (f"[background task finished, {now}]\n{text}\n"
@@ -1986,7 +2003,7 @@ class Conductor:
         decision = self.router.decide(text, source)
         model = deep if decision.deep else fast
         log.info("brain: %s (%s)", model or "default", decision.reason)
-        frame = self._context_notes(source, live) + self._frame(source, text, meta)
+        frame = self._context_notes(source, live, meta) + self._frame(source, text, meta)
         # Instant acknowledgement for turns that will take a while (audit item 2).
         early = self._early_ack if source == "voice" else None
         self._early_ack = None
@@ -2210,6 +2227,9 @@ class Conductor:
                 self.inbox.put_nowait(("heartbeat", ""))
 
 
+UNSET = object()   # Reminders.update: "leave this field alone"
+
+
 def next_occurrence(days: list[int], hhmm: str, after: float) -> float:
     """Next time (epoch) on one of `days` (0=Mon..6=Sun) at HH:MM, strictly after `after`."""
     h, m = (int(x) for x in hhmm.split(":"))
@@ -2269,7 +2289,9 @@ class Reminders:
         self._mtime = mt
         return True
 
-    def add(self, due: float | None, text: str, kind: str = "remind", repeat: dict | None = None) -> dict:
+    def add(self, due: float | None, text: str, kind: str = "remind", repeat: dict | None = None,
+            workspace: str | None = None) -> dict:
+        """workspace: optional project id (walter/workspaces.py; callers validate it). None = global."""
         self.reload_if_changed()
         if kind not in ("remind", "do"):
             raise ValueError("kind must be 'remind' or 'do'")
@@ -2280,6 +2302,8 @@ class Reminders:
             raise ValueError("due or repeat required")
         item = {"id": max([i["id"] for i in self.items], default=0) + 1, "due": due,
                 "text": text, "kind": kind, "repeat": repeat}
+        if workspace:
+            item["workspace"] = str(workspace)[:40]
         self.items.append(item)
         self._save()
         return item
@@ -2309,7 +2333,7 @@ class Reminders:
         return next((i for i in self.items if i.get("id") == rid), None)
 
     def update(self, rid: int, *, text: str | None = None, due: float | None = None,
-               repeat: dict | None = None) -> dict | None:
+               repeat: dict | None = None, workspace=UNSET) -> dict | None:
         """Edit a reminder's text/due, or a routine's text/days+time (the next run is recomputed).
         None if there is no such item. Shared by the app's Schedule screen and /api/reminders/{id}."""
         self.reload_if_changed()
@@ -2328,6 +2352,11 @@ class Reminders:
             it["due"] = float(due)
         if text is not None:
             it["text"] = text
+        if workspace is not UNSET:   # "" / None = no project (global)
+            if workspace:
+                it["workspace"] = str(workspace)[:40]
+            else:
+                it.pop("workspace", None)
         self._save()
         return it
 
@@ -2359,6 +2388,7 @@ class Reminders:
                 log.exception("reminders: cluster check failed")
             for i in self.fire_due(time.time()):
                 source = "routine" if i.get("kind") == "do" else "reminder"
+                meta = self.project_meta(i)
                 faces = getattr(self.conductor, "faces", None)
                 if source == "reminder" and i.get("face") and faces is not None:
                     try:
@@ -2367,20 +2397,33 @@ class Reminders:
                             continue
                     except Exception:
                         log.exception("face reminder failed; saying it on the wall")
+                title = "Reminder" + (f" ({meta['workspace_name']})" if meta else "")
                 if source == "reminder" and self.conductor.unheard():
-                    self.away(i["text"])
+                    self.away(i["text"], title)
                 self.conductor.sleeping = False
-                self.conductor.inbox.put_nowait((source, i["text"]))
+                self.conductor.inbox.put_nowait((source, i["text"], meta) if meta else (source, i["text"]))
                 if source == "reminder":
-                    self.conductor.notify_app("reminder", i["text"], "Reminder")
+                    self.conductor.notify_app("reminder", i["text"], title)
 
-    def away(self, text: str):
+    @staticmethod
+    def project_meta(item: dict) -> dict:
+        """{"workspace", "workspace_name"} for an item that belongs to a project that still exists, else {}."""
+        wid = item.get("workspace")
+        if not wid:
+            return {}
+        try:
+            w = workspaces_mod.WorkspaceStore().get(wid)
+        except Exception:  # noqa: BLE001
+            w = None
+        return {"workspace": w["id"], "workspace_name": w["name"]} if w else {}
+
+    def away(self, text: str, title: str = "Reminder"):
         """A reminder nobody can hear (muted, asleep, empty room): put it on the wall
         at once and in the "while you were away" feed (the phone gets it as a push
         from notify_app), so it can't slip by (4 Nov: a muted reminder was missed)."""
         from . import dashboard as dash
         try:
-            dash.show_card("Reminder", text, 180)
+            dash.show_card(title, text, 180)
         except Exception:
             log.exception("couldn't show the reminder card")
-        self.conductor.note_away("Reminder", text, "reminder", push=False)
+        self.conductor.note_away(title, text, "reminder", push=False)

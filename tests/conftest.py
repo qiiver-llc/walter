@@ -58,6 +58,7 @@ def _isolated_workspaces(tmp_path, monkeypatch):
     monkeypatch.setattr(ws.WorkspaceStore, "DEFAULT_NOTES_ROOT", tmp_path / "ws" / "notes")
     monkeypatch.setattr(ws.WorkspaceStore, "DEFAULT_TAGS", tmp_path / "ws" / "task-workspaces.json")
     monkeypatch.setattr(ws.WorkspaceStore, "DEFAULT_FACE_OUT", tmp_path / "ws" / "dashboard-workspace.json")
+    monkeypatch.setattr(ws.WorkspaceStore, "DEFAULT_TURN", tmp_path / "ws" / "turn-workspace.json")
 
 
 @_pytest.fixture(autouse=True)

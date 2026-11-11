@@ -375,9 +375,14 @@ def build_app(cfg: Config, hub: Hub, conductor, reminders, brain, tasks, setup, 
         d = await body(request)
         if not d.get("text") or ("due" not in d and not d.get("repeat")):
             raise web.HTTPBadRequest(text="text and due (epoch seconds) or repeat required")
+        ws = d.get("workspace") or None
+        if ws is not None:   # an optional project: exactly one of the workspace ids (whitelist)
+            from . import workspaces as workspaces_mod
+            if workspaces_mod.WorkspaceStore().valid_id(ws) is None:
+                raise web.HTTPBadRequest(text=f"no workspace '{str(ws)[:40]}'")
         try:
             item = reminders.add(float(d["due"]) if "due" in d else None, d["text"],
-                                 d.get("kind", "remind"), d.get("repeat"))
+                                 d.get("kind", "remind"), d.get("repeat"), workspace=ws)
         except (ValueError, KeyError) as e:
             raise web.HTTPBadRequest(text=str(e))
         return web.json_response(item)

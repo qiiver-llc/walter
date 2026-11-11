@@ -115,6 +115,17 @@ Never write family members' names, the town, or email addresses into backlog.md.
 Final message: one plain sentence summarising what you noted (it is logged, not spoken)."""
 
 
+
+def review_workspace() -> str | None:
+    """The sleep review is about Walter himself: tag it with the workspace that owns the Walter repo,
+    else the default workspace (None when workspaces aren't defined), so it doesn't show on every board."""
+    try:
+        from . import workspaces as ws
+        repo = Path(__file__).resolve().parent.parent
+        return ws.WorkspaceStore().repo_workspace(repo)
+    except Exception:  # noqa: BLE001
+        return None
+
 class SleepLearner:
     """Called from the conductor's life loop every ~20 s; starts at most one quiet worker per sleep."""
 
@@ -172,7 +183,8 @@ class SleepLearner:
         try:
             home = Path(self.cfg.brain.home)
             item = await self.tasks.start(TITLE, prompt(home, now), quiet=True,
-                                          model=getattr(life, "sleep_review_model", "") or None)
+                                          model=getattr(life, "sleep_review_model", "") or None,
+                                          workspace=review_workspace())
             log.info("sleep review started as task #%d (%s)", item["id"], why)
             return "started"
         except Exception as e:

@@ -53,7 +53,7 @@ class FakeTasks:
         self.running = running
         self.started = []
 
-    async def start(self, title, prompt, quiet=False, model=None):
+    async def start(self, title, prompt, quiet=False, model=None, workspace=None):
         self.started.append((title, quiet, model))
         return {"id": len(self.started)}
 

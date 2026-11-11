@@ -75,6 +75,17 @@ def priority_props(prio: dict[str, int]) -> list[str]:
             f"--property=Nice={prio['nice']}"]
 
 
+
+def default_workspace(face_id: str | None = None) -> str | None:
+    """The tag for a worker started without one (sleep review, cluster jobs, API callers): the running
+    routine's project, else the wall face's current workspace. None when workspaces aren't defined."""
+    try:
+        from . import workspaces as ws
+        return ws.WorkspaceStore().task_default(face_id or ws.WALL)
+    except Exception as e:  # noqa: BLE001
+        log.debug("worker tag: no default workspace (%s)", e)
+        return None
+
 class SystemdLauncher:
     """Each worker is a transient user unit: its own cgroup, so it survives
     `systemctl --user restart walter` (whose default KillMode kills everything
@@ -231,6 +242,8 @@ class Tasks:
                 "finished": None, "result": None}
         if quiet:
             item["quiet"] = True
+        if not workspace:
+            workspace = default_workspace()   # never untagged once workspaces exist (11 Nov)
         if workspace:
             item["workspace"] = str(workspace)[:40]
         env = claude_env(self.cfg)
