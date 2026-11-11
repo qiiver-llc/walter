@@ -8,6 +8,10 @@
 // Loops > "Heartbeat instructions" (11 Nov 10:58) opens an editor for the wake-up line ([life] heartbeat_prompt) and
 // the checklist (initiative.md): draft kept on this device as you type, Save / Revert, stale-edit guard (409),
 // and "Restore a previous version" from Walter's last 10 backups. GET /api/app/schedule/heartbeat.
+// Projects (11 Nov): reminders, jobs and routines can belong to a workspace. Each row shows a small project chip,
+// the edit sheet has a Project picker (No project + every workspace, walled ones too, names only), a filter bar
+// at the top (All / No project / each project; kept on this device), and "+ Add" defaults to the filtered
+// project, else the wall's current one. Hidden entirely when Walter has no workspaces.
 (function () {
   "use strict";
   const $ = (id) => document.getElementById(id);
@@ -21,6 +25,8 @@
   let delAsk = false, expanded = new Set(), hbTimer = 0, hbWant = null;
   const DRAFT = "walter.schedule.hbdraft.v1", INI_MAX = 60 * 1024;
   let hb = null, hbBase = null, draftTimer = 0, bkAsk = null, bkTimer = 0;
+  const PROJ = "walter.schedule.proj.v1";
+  let proj = ""; try { proj = localStorage.getItem(PROJ) || ""; } catch (e) { /* private */ }
 
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
   function haptic() { try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* no vibration */ } }
@@ -74,6 +80,29 @@
   function isLong(t) { const s = String(t || ""); return s.indexOf("\n") >= 0 || s.length > 90; }
   const ROLE = { briefing: "Morning briefing", wrapup: "Evening wrap-up", self_review: "Nightly self-review" };
 
+  // ---- projects (workspaces)
+  function projects() { return (st && Array.isArray(st.workspaces)) ? st.workspaces : []; }
+  function projName(id) { const w = projects().find((x) => x.id === id); return w ? w.name : ""; }
+  function filterOn() { return proj && (proj === "none" || projects().some((w) => w.id === proj)) ? proj : ""; }
+  function only(items) {
+    const f = filterOn(); if (!f) return items;
+    return items.filter((r) => (r.workspace || "none") === f);
+  }
+  function filterBar() {
+    const ws = projects(); if (!ws.length) return "";
+    const f = filterOn();
+    const b = (id, label) => `<button type="button" class="chip sc-pf${f === id ? " on" : ""}" data-proj="${esc(id)}" aria-pressed="${f === id}">${esc(label)}</button>`;
+    return `<div class="sc-filter" role="group" aria-label="Show project">${b("", "All")}${ws.map((w) => b(w.id, w.name)).join("")}${b("none", "No project")}</div>`;
+  }
+  function fillProj(sel) {
+    const ws = projects(), box = $("scProjBox"), el = $("scProj");
+    if (!box || !el) return;
+    box.classList.toggle("hidden", !ws.length);
+    el.innerHTML = '<option value="">No project</option>' +
+      ws.map((w) => `<option value="${esc(w.id)}">${esc(w.name)}${w.walled ? " (walled)" : ""}</option>`).join("");
+    el.value = ws.some((w) => w.id === sel) ? sel : "";
+  }
+
   // ---- the list (same markup in Settings and in the sheet; everything wired by data- attributes)
   function textBlock(id, text) {
     const long = isLong(text), ex = expanded.has(id);
@@ -83,7 +112,9 @@
   function row(r, kind) {
     const rt = kind === "routine";
     const when = rt ? t12(r.time) : whenOf(r.due);
-    const chip = rt ? `<span class="sc-chip">${esc(daysChip(r))}</span>` : (r.kind === "do" ? '<span class="sc-chip">Walter does it</span>' : "");
+    const pn = r.workspace ? projName(r.workspace) : "";
+    const chip = (rt ? `<span class="sc-chip">${esc(daysChip(r))}</span>` : (r.kind === "do" ? '<span class="sc-chip">Walter does it</span>' : "")) +
+      (pn ? `<span class="sc-chip proj" title="Project">${esc(pn)}</span>` : "");
     const off = rt && !r.enabled;
     const sw = rt ? `<label class="sc-sw" title="${off ? "Paused" : "Running"}"><input type="checkbox" data-pause="${r.id}"${off ? "" : " checked"}${busy ? " disabled" : ""} aria-label="${off ? "Resume" : "Pause"} this routine"><span></span></label>` : "";
     return `<div class="sc-row${off ? " paused" : ""}"><div class="sc-main" role="button" tabindex="0" data-edit="${r.id}">` +
@@ -127,9 +158,9 @@
   function content() {
     if (!st) return '<p class="muted small">' + (needs ? "Needs one restart to enable." : "Loading...") + "</p>";
     return (stale ? '<p class="muted small sc-stale">Walter can\'t be reached: this is the last list seen.</p>' : "") +
-      loops() + section("Reminders", st.reminders || [], "reminder", "Add") +
-      section("Do later", st.later || [], "later", "Add") +
-      section("Routines", st.routines || [], "routine", "Add") + timers();
+      loops() + filterBar() + section("Reminders", only(st.reminders || []), "reminder", "Add") +
+      section("Do later", only(st.later || []), "later", "Add") +
+      section("Routines", only(st.routines || []), "routine", "Add") + timers();
   }
   function counts() {
     if (!st) return "";
@@ -224,6 +255,8 @@
       $("scDate").min = dateOf(Date.now() / 1000);
     }
     $("scText").value = r ? r.text : ""; counter();
+    const f = filterOn();
+    fillProj(r ? (r.workspace || "") : (f && f !== "none" ? f : f === "none" ? "" : (st && st.current_workspace) || ""));
     msg(""); show("edit");
   }
   function startEdit(id) {
@@ -244,6 +277,8 @@
     const time = $("scTime").value;
     if (!/^\d{2}:\d{2}$/.test(time)) { msg("Pick a time.", true); return; }
     const body = { text, time };
+    const pv = projects().length && $("scProj") ? $("scProj").value : "";
+    if (pv) body.workspace = pv;
     if (kind === "routine") {
       const ds = getDays(); if (!ds.length) { msg("Pick at least one day.", true); return; }
       body.days = daysSpec(ds);
@@ -257,6 +292,7 @@
     if (editing) {
       const r = editing.r, ch = { action: "edit", id: r.id };
       if (text !== r.text) ch.text = text;
+      if (projects().length && pv !== (r.workspace || "")) ch.workspace = pv || null;
       if (kind === "routine") {
         if (time !== r.time || body.days !== daysSpec(r.days)) { ch.time = time; ch.days = body.days; }
       } else if (time !== hhmmOf(r.due) || body.date !== dateOf(r.due)) { ch.time = time; ch.date = body.date; }
@@ -395,6 +431,8 @@
 
   // ---- list clicks (Settings and the sheet)
   function onList(e) {
+    const pf = e.target.closest("[data-proj]");
+    if (pf) { haptic(); proj = pf.dataset.proj; try { localStorage.setItem(PROJ, proj); } catch (er) { /* private */ } render(); return; }
     const mo = e.target.closest("[data-more]");
     if (mo) { const id = +mo.dataset.more; if (expanded.has(id)) expanded.delete(id); else expanded.add(id); render(); return; }
     const pz = e.target.closest("[data-pause]");
