@@ -176,6 +176,26 @@ def test_live_rows_on_the_workers_card(world, monkeypatch):
     assert cloud[0]["workspace"] == "walter" and cloud[0]["activity"] == "working in box nimble-x"
     assert cloud[1]["activity"] == "Waiting in the cloud"
     assert snap["running"] == 0                              # cloud jobs don't use a local slot
+    assert snap["cloud_running"] == 1                        # ...but the face still shows them (cloud satellites)
+    assert cloud[0]["addon"] == "fakecloud"
+
+
+def test_face_loop_writes_cloud_jobs_to_the_file(world, tmp_path):
+    """The walter-workers-live loop (main) puts running cloud jobs into face/dashboard-workers.json."""
+    import json
+    from walter import workerlive
+    world["jobs"]([row()])
+    world["cw"].refresh()
+    out = tmp_path / "dashboard-workers.json"
+    orig = workerlive.Snapshotter.__init__
+    try:
+        workerlive.Snapshotter.__init__ = lambda self, *a, **k: orig(self, world["data"], cwd=world["data"], cloud=False)
+        assert workerlive.main(["--out", str(out)]) == 0
+    finally:
+        workerlive.Snapshotter.__init__ = orig
+    d = json.loads(out.read_text())
+    assert d["running"] == 0 and d["cloud_running"] == 1
+    assert [(w["id"], w["cloud"]) for w in d["workers"]] == [("fakecloud:job-1", True)]
 
 
 def test_watcher_hands_reports_to_the_loop(world, monkeypatch):

@@ -129,6 +129,7 @@
     engagedUntil: 0,                 // talking with someone: a bit bigger in the corner until then (seconds, now())
     frameN: 0,
     jobs: 0, jobsVis: 0,             // background tasks running
+    cloudJobs: 0,                    // add-on cloud jobs running (workerslive.js event): cloud-blue satellites
     dim: 1,
     muted: false,                    // the person muted the mic (Space bar)
     hopPhase: 0,
@@ -278,7 +279,7 @@
     // thinking dots
     S.dots = lerp(S.dots, S.state === "thinking" ? 1 : 0, ease(dt, 5));
     S.hud = lerp(S.hud, S.state === "working" ? 1 : 0, ease(dt, 4));
-    S.jobsVis = lerp(S.jobsVis, S.jobs > 0 ? 1 : 0, ease(dt, 3));
+    S.jobsVis = lerp(S.jobsVis, S.jobs + S.cloudJobs > 0 ? 1 : 0, ease(dt, 3));
 
     // --- gaze
     if (S.lookOverride && t < S.lookUntil) {
@@ -512,12 +513,14 @@
     if (front) ctx.ellipse(0, 0, ox, oy, 0, 0, Math.PI);
     else ctx.ellipse(0, 0, ox, oy, 0, Math.PI, Math.PI * 2);
     ctx.stroke();
-    const n = Math.max(1, S.jobs);
+    const local = S.jobs, n = Math.max(1, local + S.cloudJobs);
+    const still = REDUCED_MOTION.matches;
     for (let i = 0; i < n; i++) {
       const a = (t * 0.7 + (i * Math.PI * 2) / n) % (Math.PI * 2);
       if ((Math.sin(a) > 0) !== front) continue;
       const px = Math.cos(a) * ox, py = Math.sin(a) * oy;
       const pulse = 0.75 + 0.25 * Math.sin(t * 4 + i);
+      if (i >= local && S.cloudJobs > 0) { drawCloudSat(px, py, R, t, i, pulse, still); continue; }
       ctx.fillStyle = rgb(shade(col, 0.7), 0.25 * S.jobsVis);
       ctx.beginPath(); ctx.arc(px, py, R * 0.07 * pulse, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = rgb(shade(col, 0.8), 0.9 * S.jobsVis);
@@ -525,6 +528,29 @@
     }
     ctx.restore();
   }
+
+  // An add-on cloud job (Teak box, ...): a small cloud-blue rounded diamond with a soft glow
+  // instead of the plain ball; same orbit. Reduced motion: no spin.
+  const CLOUD_SAT = [120, 190, 255];
+  function drawCloudSat(px, py, R, t, i, pulse, still) {
+    const v = S.jobsVis;
+    ctx.fillStyle = rgb(CLOUD_SAT, 0.22 * v);                    // glow
+    ctx.beginPath(); ctx.arc(px, py, R * 0.075 * pulse, 0, Math.PI * 2); ctx.fill();
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(Math.PI / 4 + (still ? 0 : Math.sin(t * 0.8 + i) * 0.35));
+    const h = R * 0.034, rr = h * 0.35;                          // half size, corner radius
+    ctx.beginPath();
+    ctx.moveTo(-h + rr, -h); ctx.arcTo(h, -h, h, h, rr); ctx.arcTo(h, h, -h, h, rr);
+    ctx.arcTo(-h, h, -h, -h, rr); ctx.arcTo(-h, -h, h, -h, rr); ctx.closePath();
+    ctx.fillStyle = rgb([200, 230, 255], 0.92 * v);
+    ctx.fill();
+    ctx.strokeStyle = rgb(CLOUD_SAT, 0.95 * v);
+    ctx.lineWidth = Math.max(1, R * 0.008);
+    ctx.stroke();
+    ctx.restore();
+  }
+  window.addEventListener("walter-cloud-jobs", (e) => { S.cloudJobs = Math.max(0, (e.detail && e.detail.n) | 0); });
 
   let last = now();
   window.WALTER_STATE = S; // read-only peek for small add-ons (say-name hint)

@@ -384,7 +384,9 @@ class Snapshotter:
         order = {"running": 0, "queued": 1}
         out.sort(key=lambda r: (order.get(r["status"], 2), r.get("started") or 0))
         return {"updated": now, "max_tasks": self.max_tasks,
-                "running": sum(1 for r in out if r["status"] == "running" and not r.get("cloud")), "workers": out}
+                "running": sum(1 for r in out if r["status"] == "running" and not r.get("cloud")),
+                "cloud_running": sum(1 for r in out if r["status"] == "running" and r.get("cloud")),
+                "workers": out}
 
     def cloud_rows(self, now: float) -> list[dict]:
         """Add-on cloud jobs (Teak boxes, ...) as rows: running/queued ones, and ended ones for DONE_KEEP_S."""

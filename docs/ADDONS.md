@@ -165,7 +165,8 @@ What the core does while such an add-on is ON:
   titles and steps are cleaned and capped, odd ids and states dropped.
 - **Shows the jobs** in `walterctl tasks` (`--json` gives `{"tasks", "cloud", "cloud_errors"}`),
   `walterctl tasks --live`, the Workers card on the face (`face/dashboard-workers.json`, a small cloud mark
-  before the title; cloud jobs don't take a local worker slot) and the app's workers list (a "cloud" badge
+  before the title; cloud jobs don't take a local worker slot: `running` counts local ones, `cloud_running`
+  the cloud ones), a cloud-blue rounded-diamond satellite orbiting the face per running cloud job, and the app's workers list (a "cloud" badge
   with the add-on's name). Each row carries its `workspace`.
 - **Reports finished jobs**: when a job turns `done` or `failed`, the running Walter runs its `fetch` once
   (up to 5 min, in a thread; tried 3 times, then reported without it) and hands the report over as an

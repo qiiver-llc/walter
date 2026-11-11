@@ -362,7 +362,7 @@
     function gauges(C, d) {
       const G = Object.assign({}, (C && C.gauges) || {}, d.gauges || {}); // d.gauges = live 3 s file
       const W = (d.workers && d.workers.workers) || [];
-      const running = W.filter((w) => w.status === "running").length;
+      const running = W.filter((w) => w.status === "running" && !w.cloud).length;   // cloud jobs use no local slot
       const max = (d.workers && d.workers.max_tasks) || 3;
       const week = d.usage && d.usage.week && typeof d.usage.week.pct === "number" ? d.usage.week.pct : G.week;
       const loadPct = G.load != null ? (100 * G.load) / (G.cores || 1) : null;

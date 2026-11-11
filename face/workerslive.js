@@ -132,8 +132,17 @@
     card.innerHTML = h; card.classList.add("on");
   }
 
+  // add-on cloud jobs: walter.js draws them as cloud-blue satellites next to the local ones
+  let lastCloud = -1;
+  function tellCloud(d) {
+    const n = (d.workers || []).filter((w) => w.status === "running" && w.cloud).length;
+    if (n === lastCloud) return;
+    lastCloud = n;
+    window.dispatchEvent(new CustomEvent("walter-cloud-jobs", { detail: { n } }));
+  }
+
   async function poll() {
-    try { render(await load()); } catch (e) { /* offline: leave as is */ }
+    try { const d = await load(); tellCloud(d); render(d); } catch (e) { /* offline: leave as is */ }
   }
   poll(); setInterval(poll, 3000);
 })();
