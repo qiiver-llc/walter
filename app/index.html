@@ -223,6 +223,30 @@
         shown or read out; passwords only go into a password box.</p>
     </section>
 
+    <!-- sub-screen of Settings: add-ons (addons.js, walter/app_addons.py) -->
+    <section id="v-addons" class="view sub">
+      <div class="vhead"><button class="back" data-back aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><h1>Add-ons</h1></div>
+      <div class="ad-tabs" role="tablist">
+        <button class="chip" role="tab" data-adtab="installed" aria-selected="true">Installed</button>
+        <button class="chip" role="tab" data-adtab="catalog" aria-selected="false">Catalog</button>
+        <button class="chip" role="tab" data-adtab="repo" aria-selected="false">Add from a repo</button>
+      </div>
+      <p id="adMsg" class="small muted" aria-live="polite"></p>
+      <div id="adInstalled" class="ad-list"></div>
+      <div id="adCatalog" class="ad-list hidden"></div>
+      <div id="adRepo" class="stack hidden">
+        <p class="muted small">Paste the address of a public GitHub repo (or a folder in one) that has an addon.toml. You'll see what it is and what it asks for before anything is installed.</p>
+        <input id="adUrl" placeholder="https://github.com/owner/repo" autocapitalize="off" autocomplete="off" spellcheck="false" inputmode="url" maxlength="400" aria-label="GitHub repo address">
+        <button id="adPreview" class="btn">Check it</button>
+        <div id="adPreviewBox"></div>
+      </div>
+      <h2>Safety</h2>
+      <div class="stack">
+        <button id="adKill" class="btn danger">Turn every add-on off</button>
+        <p class="muted small">Add-ons are off until you turn them on, never update by themselves, and the ones that send code off this computer are never used in walled projects.</p>
+      </div>
+    </section>
+
     <!-- sub-screen of Walter: settings for this device -->
     <section id="v-settings" class="view sub">
       <div class="vhead"><button class="back" data-back aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><h1>Settings</h1></div>
@@ -252,6 +276,12 @@
         <div id="clOnRow" class="row hidden"><button id="clRotate" class="chip">Rotate</button>
           <button id="clOffBtn" class="btn danger">Turn off</button></div>
         <p class="muted small">Use this app away from home through a private address for your household. Only the app goes through it. Free during the beta.</p>
+      </div>
+      <h2>Add-ons</h2>
+      <div class="navlist">
+        <button class="navrow" data-go="addons">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6v4a2 2 0 1 0 0 4v0h4v6h-4a2 2 0 1 0-4 0H5v-6a2 2 0 1 0 0-4V7h4z"/></svg>
+          <span class="nt">Add-ons<span id="adRowSub" class="ns">Extras you can switch on, with clear permissions</span></span><span class="chev">&#8250;</span></button>
       </div>
       <h2>Projects</h2>
       <div class="stack">
@@ -560,6 +590,14 @@
   </div>
 </div>
 
+<div id="adSheet" class="sheet-wrap hidden" role="dialog" aria-modal="true" aria-labelledby="adSheetTitle">
+  <div class="sheet">
+    <div class="sheet-title" id="adSheetTitle"></div>
+    <div class="sheet-body" id="adSheetBody"></div>
+    <div class="sheet-btns" id="adSheetBtns"></div>
+  </div>
+</div>
+
 <div id="toasts"></div>
 
 <script src="face-mini.js"></script>
@@ -568,5 +606,6 @@
 <script src="player.js"></script>
 <script src="modes.js"></script>
 <script src="schedule.js"></script>
+<script src="addons.js"></script>
 </body>
 </html>

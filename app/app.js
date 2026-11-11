@@ -820,7 +820,7 @@
   // (or a sub-screen opened straight from chat), 2 = a sub-screen opened from a tab.
   // Back from a tab goes to chat; back from chat leaves the app as usual.
   const TABS = ["chat", "today", "list", "walter"];
-  const PARENT = { remote: "walter", settings: "walter" };
+  const PARENT = { remote: "walter", settings: "walter", addons: "walter" };
   const reduceMotion = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
   let curView = "chat", navPending = null;
   function showView(view) {

@@ -50,7 +50,7 @@ PCM_SR = 16000
 WALL_RE = re.compile(r"\b(?:on|through|over|from|via)\s+the\s+wall(?:\s+speaker)?\b|\bout\s+loud\s+at\s+home\b"
                      r"|\bsay\s+it\s+(?:out\s+loud|at\s+home)\b", re.I)
 SHELL = ("./", "index.html", "app.js", "app.css", "face-mini.js", "pcm-worklet.js", "remote.js", "player.js",
-         "modes.js", "schedule.js",
+         "modes.js", "schedule.js", "addons.js",
          "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/icon.svg")
 
 
