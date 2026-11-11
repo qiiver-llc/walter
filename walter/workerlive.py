@@ -394,11 +394,13 @@ class Snapshotter:
             from walter import cloudworkers as CW
             if self._cloud is None:
                 self._cloud = CW.CloudWorkers(self.data)
-            rows = []
+            rows, looks = [], None
             for j in self._cloud.jobs(self.cloud_mode):
                 fin = j.get("finished")
                 if j["state"] in ("running", "queued") or (fin and now - fin < DONE_KEEP_S):
-                    rows.append(CW.live_row(j, now))
+                    if looks is None:
+                        looks = self._cloud.looks()
+                    rows.append(CW.live_row(j, now, looks.get(j["addon"])))
             return rows
         except Exception:  # noqa: BLE001  (never let an add-on break the workers card)
             return []

@@ -249,3 +249,33 @@ def test_job_seen_running_then_ending_before_the_first_watch_is_still_reported(w
     cw.refresh()
     assert cw.deliver(got.append) == 1                      # Walter's first pass: job-1 yes, old-1 no
     assert [g["id"] for g in got] == ["fakecloud:job-1"]
+
+
+ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#fff"/></svg>'
+
+
+def test_look_rides_along_on_cloud_rows(world):
+    from walter import workerlive
+    folder = world["data"] / "addons" / "fakecloud"
+    world["jobs"]([row()])
+    world["cw"].refresh()
+    snap = workerlive.Snapshotter(world["data"], cwd=world["data"], cloud=False).snapshot()
+    assert "look" not in [w for w in snap["workers"] if w.get("cloud")][0]   # no look: default diamond
+    (folder / "assets").mkdir()
+    (folder / "assets" / "icon.svg").write_text(ICON)
+    (folder / "addon.toml").write_text(TOML + '[workers.look]\ncolor = "#c8923a"\nshape = "hex"\n'
+                                              'icon = "assets/icon.svg"\n')
+    snap = workerlive.Snapshotter(world["data"], cwd=world["data"], cloud=False).snapshot()
+    lk = [w for w in snap["workers"] if w.get("cloud")][0]["look"]
+    assert lk["color"] == "#c8923a" and lk["shape"] == "hex" and lk["icon_url"].startswith("data:image/svg+xml;base64,")
+    assert world["cw"].looks() == {"fakecloud": lk}
+    assert CW.live_row(world["cw"].jobs()[0], 1000.0, None).get("look") is None
+
+
+def test_a_hostile_icon_makes_the_addon_invalid(world):
+    """A hostile icon is a manifest error like any other: the add-on stops being a source (no look, no jobs)."""
+    folder = world["data"] / "addons" / "fakecloud"
+    (folder / "assets").mkdir()
+    (folder / "assets" / "icon.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg"><script>x</script></svg>')
+    (folder / "addon.toml").write_text(TOML + '[workers.look]\nicon = "assets/icon.svg"\n')
+    assert world["cw"].looks() == {} and world["cw"].sources() == []

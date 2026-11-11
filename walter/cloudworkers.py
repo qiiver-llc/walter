@@ -150,6 +150,19 @@ class CloudWorkers:
             log.exception("cloud workers: couldn't read the add-ons")
             return []
 
+    def looks(self) -> dict[str, dict]:
+        """{add-on id: {color, shape, icon_url?}} for the ON add-ons that declare a [workers.look]
+        (walter/addonlook.py; icons are sanitized data: URIs). Missing = the default cloud-blue diamond."""
+        out = {}
+        for m in self.sources():
+            try:
+                lk = self.store.look(m)
+            except Exception:  # noqa: BLE001  (a bad look never breaks the workers list)
+                lk = None
+            if lk:
+                out[m["id"]] = lk
+        return out
+
     def _run(self, m: dict, which: str, job: str | None, timeout: float):
         argv, env, cwd = self.store.workers_argv(m["id"], which, job)
         p = subprocess.run(argv, env=env, cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True,
@@ -365,8 +378,9 @@ def finish_text(item: dict) -> str:
             f"\"{item['title']}\" {item['status']}.\nWorker's report:\n{item['result']}")
 
 
-def live_row(j: dict, now: float) -> dict:
-    """A cloud job as a row of face/dashboard-workers.json (walter/workerlive.py)."""
+def live_row(j: dict, now: float, look: dict | None = None) -> dict:
+    """A cloud job as a row of face/dashboard-workers.json (walter/workerlive.py). `look`: the add-on's
+    [workers.look] as CloudWorkers.looks() resolves it (left out = the default cloud-blue diamond)."""
     st = "cancelled" if j["state"] == "stopped" else j["state"]
     started = j.get("started")
     fin = j.get("finished")
@@ -376,7 +390,8 @@ def live_row(j: dict, now: float) -> dict:
     return {"id": j["key"], "title": j["title"][:80], "status": st, "started": started, "finished": fin,
             "elapsed": int(((fin or now) - started)) if started else 0, "activity": act[:120],
             "last_activity": None, "files": 0, "steps": 0, "log": [], "workspace": j.get("workspace"),
-            "cloud": True, "addon": j["addon"], "addon_name": j["addon_name"]}
+            "cloud": True, "addon": j["addon"], "addon_name": j["addon_name"],
+            **({"look": look} if look else {})}
 
 
 class Watcher:

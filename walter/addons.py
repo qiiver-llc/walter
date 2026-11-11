@@ -36,6 +36,7 @@ import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path, PurePosixPath
+from . import addonlook
 
 log = logging.getLogger("walter.addons")
 
@@ -311,8 +312,14 @@ def validate_manifest(raw: dict, folder: Path | None = None) -> tuple[dict, list
 
     workers = raw.get("workers")
     m["workers"] = None
+    m["look"] = None
     if workers is not None:
         m["workers"] = _workers_section(workers, folder, m["permissions"], errs)
+        if isinstance(workers, dict) and workers.get("look") is not None:
+            m["look"] = addonlook.check_look(workers["look"], folder, errs) or None
+    m["favicon"] = None
+    if raw.get("favicon") is not None:
+        m["favicon"] = addonlook.check_favicon(raw["favicon"], folder, errs)
 
     if folder is not None:
         if not (folder / "SKILL.md").is_file():
@@ -331,9 +338,9 @@ def _workers_section(w, folder: Path | None, perms: list[str], errs: list[str]) 
         errs.append("[workers] must be a table with list = \"...\"")
         return None
     out: dict = {}
-    bad = sorted(set(w) - {"list", "fetch"})
+    bad = sorted(set(w) - {"list", "fetch", "look"})
     if bad:
-        errs.append(f"[workers] {bad[0]}: unknown key (only list and fetch)")
+        errs.append(f"[workers] {bad[0]}: unknown key (only list, fetch and [workers.look])")
     if "list" not in w:
         errs.append("[workers] needs list = \"...\"")
     if "run_commands" not in perms:
@@ -744,8 +751,22 @@ class Addons:
                 "secrets": [{**s, "set": self._secret_path(m["id"], s["key"]).is_file()} for s in m["secrets"]],
                 "cli": sorted(m["cli"]), "mcp": bool(m.get("mcp")), "routines": len(m.get("routines", [])),
                 "workers": bool(m.get("workers")),
+                "look": self.look(m), "favicon_url": self.favicon_url(m),
                 "official": src.get("origin") == "catalog",
                 "source": {k: src.get(k) for k in ("origin", "repo", "path", "commit", "installed_at") if k in src}}
+
+    def look(self, m: dict) -> dict | None:
+        """{color, shape, icon_url?} for this add-on's cloud jobs, or None = the default cloud-blue diamond."""
+        try:
+            return addonlook.resolve(m, self.folder(m["id"]))
+        except (AddonError, KeyError):
+            return None
+
+    def favicon_url(self, m: dict) -> str | None:
+        try:
+            return addonlook.favicon_url(m, self.folder(m["id"]))
+        except (AddonError, KeyError):
+            return None
 
     def list(self) -> list[dict]:
         st = self.state()
@@ -872,7 +893,8 @@ class Addons:
             out.append({"id": e["id"], "name": str(e.get("name") or e["id"])[:60],
                         "version": str(e.get("version") or "")[:40],
                         "description": str(e.get("description") or "")[:300], "permissions": perms,
-                        "path": path, "sha256": sha if re.match(r"^[0-9a-f]{64}$", sha) else ""})
+                        "path": path, "sha256": sha if re.match(r"^[0-9a-f]{64}$", sha) else "",
+                        "favicon_url": addonlook.clean_data_uri(e.get("favicon"))})
         return out
 
     def install(self, aid: str, *, update: bool = False) -> dict:
@@ -913,7 +935,20 @@ class Addons:
         if errs:
             raise AddonError("its addon.toml has problems: " + "; ".join(errs[:4]), "bad_manifest")
         inst = self.installed(m["id"])
+        fav = None
+        lk = m.get("look") or {}
+        rel = m.get("favicon") or lk.get("favicon") or lk.get("icon")
+        if rel:   # a small picture for the preview card; a bad or missing one just isn't shown
+            kind = {".svg": "svg", ".png": "png", ".ico": "ico"}.get(PurePosixPath(rel).suffix.lower())
+            try:
+                data = self.hub.raw(repo, commit, (sub + "/" if sub else "") + rel,
+                                    addonlook.SVG_CAP if kind == "svg" else addonlook.RASTER_CAP)
+                uri, probs = addonlook.image_problems(data, kind or "")
+                fav = uri if uri and not probs else None
+            except AddonError:
+                fav = None
         return {"repo": repo, "path": sub, "ref": ref, "commit": commit, "id": m["id"], "name": m["name"],
+                "favicon_url": fav,
                 "version": m["version"], "description": m["description"], "author": m.get("author", ""),
                 "homepage": m.get("homepage", ""),
                 "permissions": [{"id": p, "label": PERMISSIONS[p], "danger": p in DANGER} for p in m["permissions"]],

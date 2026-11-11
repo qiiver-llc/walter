@@ -817,3 +817,149 @@ def test_install_local_needs_matching_catalog_sha(verse_world):
     with pytest.raises(A.AddonError) as e:
         A.install_local(store, folder)
     assert e.value.code == "sha_mismatch"
+
+
+# ------------------------------------------------------------------ [workers.look] + favicon (walter/addonlook.py)
+from walter import addonlook as L  # noqa: E402
+
+GOOD_SVG = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><title>T</title>'
+            '<defs><linearGradient id="g"><stop offset="0" stop-color="#c8923a"/></linearGradient></defs>'
+            '<path d="M4 4h16v4h-6v12h-4V8H4z" fill="url(#g)"/></svg>')
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 40
+LOOK_BASE = {"id": "ok-id", "name": "Ok", "version": "1.0.0", "description": "d", "permissions": ["run_commands"]}
+
+
+def look_folder(tmp_path, look_toml, files=None):
+    f = tmp_path / "lk"
+    write_tree(f, {"addon.toml": 'id = "lk"\nname = "Lk"\nversion = "1.0.0"\ndescription = "d"\n'
+                                 'permissions = ["run_commands"]\n[workers]\nlist = "bin/j.py list"\n' + look_toml,
+                   "SKILL.md": "x\n", "bin/j.py": ""})
+    for rel, v in (files or {}).items():
+        (f / rel).parent.mkdir(parents=True, exist_ok=True)
+        (f / rel).write_bytes(v if isinstance(v, bytes) else v.encode())
+    return f
+
+
+def test_look_valid_and_resolved(tmp_path):
+    f = look_folder(tmp_path, '[workers.look]\ncolor = "#C8923A"\nshape = "hex"\nicon = "assets/icon.svg"\n'
+                    'favicon = "assets/fav.png"\n', {"assets/icon.svg": GOOD_SVG, "assets/fav.png": PNG})
+    m, errs = A.read_manifest(f)
+    assert errs == [] and m["look"] == {"color": "#c8923a", "shape": "hex", "icon": "assets/icon.svg",
+                                        "favicon": "assets/fav.png"}
+    lk = L.resolve(m, f)
+    assert lk["color"] == "#c8923a" and lk["shape"] == "hex" and lk["icon_url"].startswith("data:image/svg+xml;base64,")
+    import base64
+    svg = base64.b64decode(lk["icon_url"].split(",", 1)[1]).decode()
+    assert "<path" in svg and "url(#g)" in svg and "linearGradient" in svg
+    assert L.favicon_url(m, f).startswith("data:image/png;base64,")
+
+
+def test_no_look_means_default(tmp_path):
+    f = look_folder(tmp_path, "")
+    m, errs = A.read_manifest(f)
+    assert errs == [] and m["look"] is None and L.resolve(m, f) is None and L.favicon_url(m, f) is None
+
+
+@pytest.mark.parametrize("look,needle", [
+    ({"color": "orange"}, "color must look like"),
+    ({"color": "#abc"}, "color must look like"),
+    ({"shape": "blob"}, "shape must be one of"),
+    ({"icon": "../x.svg"}, "relative path inside"),
+    ({"icon": "/etc/x.svg"}, "relative path inside"),
+    ({"icon": "assets/i.png"}, "must be a .svg"),
+    ({"favicon": "assets/f.gif"}, "must be a .png"),
+    ({"glow": True}, "unknown key"),
+    ("hex", "must be a table"),
+])
+def test_look_rejects(look, needle):
+    _, errs = A.validate_manifest({**LOOK_BASE, "workers": {"list": "bin/j.py", "look": look}})
+    assert any(needle in e for e in errs), errs
+
+
+HOSTILE = [
+    ('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>', "<script>"),
+    ('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><path d="M0 0"/></svg>', "event handler"),
+    ('<svg xmlns="http://www.w3.org/2000/svg"><circle r="4" onclick="x()"/></svg>', "event handler"),
+    ('<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">'
+     '<linearGradient id="a" xlink:href="http://evil.example/x.svg#b"/></svg>', "links to"),
+    ('<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><p>x</p></foreignObject></svg>', "<foreignObject>"),
+    ('<svg xmlns="http://www.w3.org/2000/svg"><image href="https://evil.example/a.png"/></svg>', "<image>"),
+    ('<svg xmlns="http://www.w3.org/2000/svg"><image href="data:text/html,hi"/></svg>', "<image>"),
+    ('<svg xmlns="http://www.w3.org/2000/svg"><style>@import url(http://evil.example/a.css);</style></svg>', "<style>"),
+    ('<svg xmlns="http://www.w3.org/2000/svg"><path style="fill:url(http://evil.example)" d="M0 0"/></svg>', "'style'"),
+    ('<svg xmlns="http://www.w3.org/2000/svg"><path fill="url(http://evil.example/a#b)" d="M0 0"/></svg>', "unsafe value"),
+    ('<svg xmlns="http://www.w3.org/2000/svg"><a href="javascript:alert(1)"><path d="M0 0"/></a></svg>', "<a>"),
+    ('<svg xmlns="http://www.w3.org/2000/svg"><use href="#p"/></svg>', "<use>"),
+    ('<svg xmlns="http://www.w3.org/2000/svg"><animate attributeName="href" to="javascript:x"/></svg>', "<animate>"),
+    ('<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY x "y">]><svg xmlns="http://www.w3.org/2000/svg">&x;</svg>',
+     "DOCTYPE"),
+    ('<html><body>hi</body></html>', "isn't really an SVG"),
+    ('<svg xmlns="http://www.w3.org/1999/xhtml"><path d="M0 0"/></svg>', "isn't an <svg>"),
+    ('<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"', "doesn't parse"),
+    ('<svg xmlns="http://www.w3.org/2000/svg">' + "<g>" * 3 + '<path d="' + "M0 0 " * 2000 + '"/>' + "</g>" * 3 + "</svg>",
+     "larger than 8 KB"),
+]
+
+
+@pytest.mark.parametrize("svg,needle", HOSTILE)
+def test_hostile_svgs_are_rejected(tmp_path, svg, needle):
+    f = look_folder(tmp_path, '[workers.look]\nicon = "assets/icon.svg"\n', {"assets/icon.svg": svg})
+    _, errs = A.read_manifest(f)
+    assert any(needle in e for e in errs), errs
+    clean, _ = L.sanitize_svg(svg.encode())
+    if clean is not None:   # what's left after stripping is harmless
+        low = clean.replace('xmlns="http://www.w3.org/2000/svg"', "").lower()
+        for bad in ("script", "onload", "onclick", "http:", "https:", "javascript", "data:", "foreignobject",
+                    "<image", "<style", "@import", "<a ", "<use", "<animate"):
+            assert bad not in low, (bad, clean)
+
+
+def test_fake_image_files_are_rejected(tmp_path):
+    f = look_folder(tmp_path, '[workers.look]\nfavicon = "assets/f.png"\n',
+                    {"assets/f.png": "<svg onload='x()'/>"})
+    _, errs = A.read_manifest(f)
+    assert any("isn't really a PNG" in e for e in errs), errs
+    f2 = look_folder(tmp_path / "b", "", {"assets/f.ico": b"\x00\x00\x01\x00" + b"\x00" * (33 * 1024)})
+    (f2 / "addon.toml").write_text('favicon = "assets/f.ico"\n' + (f2 / "addon.toml").read_text())
+    _, errs = A.read_manifest(f2)
+    assert any("larger than 32 KB" in e for e in errs), errs
+
+
+def test_icon_symlink_outside_is_rejected(tmp_path):
+    secret = tmp_path / "secret.svg"
+    secret.write_text(GOOD_SVG)
+    f = look_folder(tmp_path, '[workers.look]\nicon = "assets/icon.svg"\n')
+    (f / "assets").mkdir()
+    (f / "assets" / "icon.svg").symlink_to(secret)
+    _, errs = A.read_manifest(f)
+    assert any("is not in the add-on" in e for e in errs), errs
+
+
+def test_top_level_favicon_and_describe(store, tmp_path):
+    write_tree(store.dir / "notes", {"addon.toml": LOCAL_TOML + 'favicon = "assets/fav.svg"\n', "SKILL.md": "x\n",
+                                     "assets/fav.svg": GOOD_SVG})
+    d = store.describe(store.installed("notes"))
+    assert d["favicon_url"].startswith("data:image/svg+xml;base64,") and d["look"] is None
+
+
+def test_catalog_favicon_is_rechecked():
+    import base64
+    ok = "data:image/svg+xml;base64," + base64.b64encode(GOOD_SVG.encode()).decode()
+    bad = "data:image/svg+xml;base64," + base64.b64encode(HOSTILE[0][0].encode()).decode()
+    entries = A.Addons._entries({"format": 1, "addons": [
+        {"id": "aa", "favicon": ok}, {"id": "bb", "favicon": bad},
+        {"id": "cc", "favicon": "data:text/html;base64,PGI+"}, {"id": "dd", "favicon": "https://evil.example/f.png"}]})
+    got = {e["id"]: e["favicon_url"] for e in entries}
+    assert got["aa"] and got["aa"].startswith("data:image/svg+xml;base64,")
+    assert got["bb"] is None and got["cc"] is None and got["dd"] is None
+
+
+def test_preview_shows_the_repos_favicon(store, gh):
+    toml = LOCAL_TOML + 'favicon = "fav.svg"\n'
+    gh.repos["someone/pretty"] = {"refs": {"HEAD": COMMIT}, "commits": {COMMIT: (
+        {"addon.toml": toml, "SKILL.md": "x\n", "fav.svg": GOOD_SVG}, None)}}
+    p = store.preview_url("someone/pretty")
+    assert p["favicon_url"].startswith("data:image/svg+xml;base64,")
+    gh.repos["someone/ugly"] = {"refs": {"HEAD": COMMIT}, "commits": {COMMIT: (
+        {"addon.toml": toml, "SKILL.md": "x\n", "fav.svg": HOSTILE[0][0]}, None)}}
+    assert store.preview_url("someone/ugly")["favicon_url"] is None
