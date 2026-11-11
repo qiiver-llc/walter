@@ -162,6 +162,8 @@ class Brain:
             "--append-system-prompt", VOICE_RULES,
             "--add-dir", str(REPO_DIR),
         ] + claude_permission_args(b)
+        from .addons import mcp_config_arg
+        cmd += mcp_config_arg()       # MCP servers of add-ons that are ON (new at each brain start)
         if self.model:
             cmd += ["--model", self.model]
         if self.session_id:

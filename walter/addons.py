@@ -1094,8 +1094,9 @@ def _perm_line(perms) -> str:
 
 
 def cli(argv: list[str], store: Addons | None = None) -> int:
-    args = [a for a in argv if a != "--yes"]
-    yes = "--yes" in argv
+    run = bool(argv) and argv[0] == "run"          # a command's own arguments pass through untouched
+    args = list(argv) if run else [a for a in argv if a != "--yes"]
+    yes = not run and "--yes" in argv
     if not args or args[0] in ("help", "-h", "--help"):
         print(USAGE)
         return 0

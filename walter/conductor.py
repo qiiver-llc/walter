@@ -1204,6 +1204,9 @@ class Conductor:
         fnote = self._focus_note()
         if fnote:
             out.append(fnote)
+        anote = self._addons_note()
+        if anote:
+            out.append(anote)
         if self._fast_notes:
             live["fast"] = list(self._fast_notes)
             out.append("[Handled instantly without you (local fast path), so you know: "
@@ -1339,6 +1342,12 @@ class Conductor:
         except Exception:
             log.exception("workspace header")
             return ""
+
+    def _addons_note(self) -> str:
+        """SKILL.md of every add-on that's ON (walter/addons.py; nothing when none are), so turning one
+        on or off counts from the next turn. Walled workspaces never get add-ons whose code leaves the box."""
+        from . import addons
+        return addons.turn_note()
 
     def _run_workspace(self, a) -> tuple[str, str]:
         st = workspaces_mod.WorkspaceStore()

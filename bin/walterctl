@@ -50,6 +50,9 @@ Walter uses this himself (it's on his PATH), and you can use it over SSH.
   walterctl podcast follow|list|latest|play|pause|resume|stop|skip|back|speed|status
                                         podcasts from public RSS (walterctl podcast help)
   walterctl cloud-link enable CODE [--replace] | status | rotate | disable
+  walterctl addon list|catalog|install ID|add URL [--yes]|on ID [--yes]|off ID|off --all|
+            settings ID [KEY VALUE]|secret ID KEY|updates|update ID|remove ID|run ID CMD ...
+                                        add-ons (docs/ADDONS.md; exit 3 = ask the owner first)
                                         reach the app from anywhere (docs/CLOUD-LINK.md)
   walterctl ha status|connect|list|areas|state|on|off|brightness|temp|scene|alias ...
                                         Home Assistant bridge, optional (walterctl ha help)
@@ -2413,6 +2416,10 @@ def main(argv):
             os.execve(str(py), [str(py), "-m", "walter.cloud_link", *rest], env)
         from walter import cloud_link
         sys.exit(cloud_link.cli(rest))
+    elif cmd in ("addon", "addons"):
+        _repo()
+        from walter import addons
+        sys.exit(addons.cli(rest))
     elif cmd in ("ha", "homeassistant"):
         _repo()
         from walter import homeassistant

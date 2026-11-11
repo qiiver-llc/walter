@@ -369,6 +369,14 @@ class SpotifyCfg:
 
 
 @dataclass
+class AddonsCfg:
+    """Add-ons (walter/addons.py, docs/ADDONS.md): the catalog index + the repo/branch installs are pinned from."""
+    catalog: str = "https://raw.githubusercontent.com/qiiver-llc/walter-addons/main/index.json"
+    repo: str = "qiiver-llc/walter-addons"
+    branch: str = "main"
+
+
+@dataclass
 class Config:
     server: ServerCfg = field(default_factory=ServerCfg)
     brain: BrainCfg = field(default_factory=BrainCfg)
@@ -386,6 +394,7 @@ class Config:
     homeassistant: HomeAssistantCfg = field(default_factory=HomeAssistantCfg)
     radio: RadioCfg = field(default_factory=RadioCfg)
     spotify: SpotifyCfg = field(default_factory=SpotifyCfg)
+    addons: AddonsCfg = field(default_factory=AddonsCfg)
 
     @property
     def data_dir(self) -> Path:
