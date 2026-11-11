@@ -15,7 +15,7 @@ attributes (no script, no event handlers, no style, no external or data referenc
 validation rejects a file that needed anything stripped. The face and the app only ever get the rebuilt
 file, inlined as a data: URI (no file route needed).
 
-Standard library only: the catalog repo keeps an identical copy as tools/look.py.
+Standard library only. Kept identical in both repos: walter/addonlook.py (Walter) and tools/look.py (catalog).
 """
 from __future__ import annotations
 
