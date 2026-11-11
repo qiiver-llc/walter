@@ -52,11 +52,20 @@ def store(cfg):
     return D.ListStore(title=cfg.dashboard.list_title)
 
 
+def verse_addon_on() -> bool:
+    """The verse-of-the-day add-on being ON implies the verse line ([dashboard] verse_line: old installs)."""
+    try:
+        from walter.addons import verse_on
+        return verse_on()
+    except Exception:
+        return False
+
+
 def face_extra(cfg) -> dict:
     extra = {"enabled": bool(cfg.dashboard.enabled), "quiet": list(cfg.life.quiet_hours),
              "dark": list(cfg.dashboard.dark_hours), "qr": "", "url": "",
              "cal_colors": dict(getattr(cfg.dashboard, "calendar_colors", None) or {}),
-             "verse": bool(getattr(cfg.dashboard, "verse_line", False))}
+             "verse": bool(getattr(cfg.dashboard, "verse_line", False)) or verse_addon_on()}
     ip = D.lan_ip() if cfg.dashboard.phone_page else ""
     if ip:
         url = f"http://{ip}:{cfg.server.port}/dashboard/add"

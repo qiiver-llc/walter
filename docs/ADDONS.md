@@ -53,9 +53,9 @@ status = "bin/status.sh"
 command = "bin/server.py"                # relative paths are inside the add-on folder
 args = ["--dir", "${ADDON_DIR}"]
 
-[[routines]]                             # optional (declared only; see "Not yet" below)
-when = "weekdays 07:30"
-prompt = "..."
+[[routines]]                             # optional: scheduled while the add-on is ON
+when = "daily ${setting.time}"           # daily | weekdays | weekends | mon,wed,fri + HH:MM (24-hour)
+prompt = "... ${setting.translation} ..." # ${setting.KEY} = the owner's value of that setting
 ```
 
 Unknown permissions, bad ids, script paths outside the folder and so on make the add-on invalid: it
@@ -67,6 +67,8 @@ won't install (and a hand-copied one shows as "broken").
 
 - `WALTER_ADDON_ID`, `WALTER_ADDON_DIR`
 - `WALTER_ADDON_SETTINGS`: the settings as JSON
+- `WALTER_ADDON_DATA`: a folder for the add-on's own files (`~/.walter/addons-data/<id>/`; the script
+  creates it when it first needs it; kept when the add-on is removed)
 - `WALTER_ADDON_SECRETS`: the folder holding its secrets, one file per key (`~/.walter/addons-secrets/<id>/<key>`,
   mode 600). Read them from there; never print or log them.
 
@@ -88,7 +90,21 @@ walterctl addon secret ID KEY             private phone page + QR on the wall (n
 walterctl addon updates | update ID | remove ID
 walterctl addon run ID CMD [ARGS...]      only while ON
 walterctl addon pack DIR                  the sha256 the catalog lists for a folder
+walterctl addon migrate-verse [--from DIR] [--used FILE] [--yes]
+                                          one-off: the old hand-made verse routine + [dashboard] verse_line
+                                          -> the verse-of-the-day add-on ON at the same time (below)
 ```
+
+### The verse of the day (migration)
+
+The verse line under the dashboard clock used to be a hand-made routine plus `[dashboard] verse_line = true`.
+It is now the `verse-of-the-day` add-on; the dashboard shows the verse while that add-on is ON (or while the
+old `verse_line` is true, for older installs). `walterctl addon migrate-verse` prints the plan and changes
+nothing; with `--yes` it installs the add-on (from a local `~/walter-addons` checkout, sha256 checked against
+its index.json, else from the catalog), sets its time to the old routine's, turns it ON, imports
+`~/.walter/home/journal/verses-used.txt` (kept), removes the old routine (its text is printed), sets
+`verse_line = false` and refreshes the dashboard. Undo: `walterctl addon off verse-of-the-day`,
+`walterctl config set dashboard.verse_line true` and recreate the routine with `walterctl every`.
 
 Exit code 3 means "needs a yes": Walter asks the owner out loud and repeats the command with `--yes`.
 
@@ -109,8 +125,14 @@ is the kill switch.
 - **MCP servers** of the add-ons that are ON are written to `~/.walter/addons-mcp.json` and passed to
   Claude Code with `--mcp-config` when the brain process starts: they arrive after
   `walterctl new-session` (or a restart).
-- **Not yet**: `[[routines]]` are validated and shown but not scheduled; use `walterctl every` from
-  SKILL.md instructions instead for now.
+- **Routines**: while an add-on is ON, each `[[routines]]` entry is an ordinary `walterctl every` routine
+  (kind "do") in `~/.walter/reminders.json`, tagged `"addon": "<id>", "addon_routine": <n>` and listed by
+  `walterctl reminders` as `[add-on <id>]`. `Addons.sync_routines()` runs after every on / off / `off --all`
+  / settings change / update / remove: it adds the missing ones, removes the ones whose add-on is off or
+  whose text/time changed, keeps matching ones as they are (a paused one stays paused) and never touches
+  an item without the `addon` tag (the owner's own routines). The running Walter re-reads the file within
+  5 s; no restart. A `when` that doesn't parse after `${setting.KEY}` is filled in (a bad time setting) is
+  skipped with a log line. Routines have no workspace (global).
 
 ## Safety rules (core)
 
@@ -139,5 +161,7 @@ catalog's `tools/pack.py` implement the same rules.
 ~/.walter/addons.json                  {"enabled": {"<id>": {"settings": {...}}}, "off": {...}}
 ~/.walter/addons-secrets/<id>/<key>    secrets
 ~/.walter/addons-mcp.json              MCP servers of the add-ons that are ON
+~/.walter/addons-data/<id>/            an add-on's own files (WALTER_ADDON_DATA)
+~/.walter/reminders.json               add-on routines live here too, tagged "addon": "<id>"
 ~/.walter/config.toml [addons]         catalog = "<index.json URL>", repo = "owner/repo", branch = "main"
 ```

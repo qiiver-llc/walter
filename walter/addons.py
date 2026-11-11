@@ -1140,6 +1140,130 @@ class Addons:
         return argv + list(args), env, base
 
 
+# ------------------------------------------------------------------ local installs + the verse migration
+def _local_archive(folder: Path) -> bytes:
+    """The add-on folder as a GitHub-style archive (one top folder), same files as pack()."""
+    src = tarfile.open(fileobj=io.BytesIO(pack(folder)), mode="r:")
+    buf = io.BytesIO()
+    with src, tarfile.open(fileobj=buf, mode="w:gz") as out:
+        for ti in src:
+            data = src.extractfile(ti).read()
+            ti.name = "local/" + ti.name
+            out.addfile(ti, io.BytesIO(data))
+    return buf.getvalue()
+
+
+def install_local(store: "Addons", folder: Path, *, update: bool = False) -> dict:
+    """Install from a local checkout of the official catalog (addons/<id> next to index.json): the
+    folder's sha256 must match that index.json, so it's the same thing a catalog install would get."""
+    folder = Path(folder).expanduser().resolve()
+    m, errs = read_manifest(folder)
+    if errs:
+        raise AddonError(f"{folder}: " + "; ".join(errs[:3]), "bad_manifest")
+    root = folder.parent.parent
+    idx = _read_json(root / "index.json", {})
+    entry = next((e for e in (idx.get("addons") or []) if isinstance(e, dict) and e.get("id") == m["id"]), None)
+    if entry is None or folder.parent.name != "addons":
+        raise AddonError(f"{folder} isn't in a catalog checkout (addons/<id> listed in index.json)", "no_source")
+    commit = "local"
+    try:
+        commit = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True,
+                                timeout=10).stdout.strip() or "local"
+    except (OSError, subprocess.SubprocessError):
+        pass
+    source = {"origin": "catalog", "repo": store.repo, "path": f"addons/{m['id']}", "commit": commit,
+              "local": str(folder)}
+    return store._install_from_archive(_local_archive(folder), "", m["id"], source, want_sha=entry.get("sha256", ""),
+                                       want_perms=entry.get("permissions"), update=update)
+
+
+VERSE_ID = "verse-of-the-day"
+
+
+def old_verse_routines(store: "Addons") -> list[dict]:
+    """The hand-made verse routine(s) from before the add-on (`walterctl every` + verses-used.txt)."""
+    items = _read_json(store.reminders_path, [])
+    return [i for i in (items if isinstance(items, list) else [])
+            if isinstance(i, dict) and not i.get("addon") and i.get("kind") == "do" and i.get("repeat")
+            and ("verses-used.txt" in str(i.get("text")) or str(i.get("text", "")).lower().startswith("silent daily verse"))]
+
+
+def migrate_verse(store: "Addons", yes: bool = False, src: Path | None = None, used: Path | None = None,
+                  after: list[list[str]] | None = None, out=print) -> int:
+    """Old verse routine + [dashboard] verse_line -> the verse-of-the-day add-on, ON, same time of day.
+    Without yes it only prints the plan (exit 3). Nothing of the owner's is deleted except the old routine
+    (its text is printed so it can be recreated); verses-used.txt stays where it is."""
+    repo_root = Path(__file__).resolve().parent.parent
+    if after is None:   # tests pass [] so nothing outside their temp folder is touched
+        after = [[str(repo_root / "bin" / "walterctl"), "config", "set", "dashboard.verse_line", "false"],
+                 [str(repo_root / "bin" / "walter-dashboard"), "refresh", "--no-weather"]]
+    old = old_verse_routines(store)
+    when = old[0]["repeat"]["time"] if old else "06:30"
+    used = Path(used) if used else store.data / "home" / "journal" / "verses-used.txt"
+    m = store.installed(VERSE_ID)
+    if src is None:
+        guess = Path.home() / "walter-addons" / "addons" / VERSE_ID
+        src = guess if guess.is_dir() else None
+    plan = []
+    if m is None:
+        plan.append(f"install {VERSE_ID} from " + (str(src) + " (local catalog checkout, sha256 checked)" if src
+                                                   else "the catalog"))
+    plan.append(f"set its time to {when} and turn it ON (its daily routine appears in `walterctl reminders`)")
+    if used.is_file():
+        plan.append(f"import the used references from {used} (the file itself stays)")
+    for o in old:
+        plan.append(f"remove the old routine #{o['id']} ({','.join(str(d) for d in o['repeat']['days'])} at "
+                    f"{o['repeat']['time']}): {o['text'][:70]}...")
+    plan.append("set [dashboard] verse_line = false (the add-on being ON now shows the verse) and refresh the dashboard")
+    if not yes:
+        out("Verse migration plan:")
+        for n, line in enumerate(plan, 1):
+            out(f"  {n}. {line}")
+        out("Nothing changed. Run again with --yes to do it.")
+        return 3
+    if m is None:
+        if src is not None:
+            install_local(store, src)
+        else:
+            store.install(VERSE_ID)
+        out(f"installed {VERSE_ID}")
+    store.set_setting(VERSE_ID, "time", when)
+    store.enable(VERSE_ID)
+    out(f"{VERSE_ID} is ON (daily at {when})")
+    if used.is_file():
+        argv, env, cwd = store.run_argv(VERSE_ID, "import", [str(used)])
+        r = subprocess.run(argv, env=env, cwd=str(cwd), capture_output=True, text=True, timeout=60)
+        out((r.stdout or r.stderr).strip() or "imported")
+    if old:
+        ids = {o["id"] for o in old}
+        items = _read_json(store.reminders_path, [])
+        keep = [i for i in items if not (isinstance(i, dict) and i.get("id") in ids)]
+        tmp = store.reminders_path.with_name(f".reminders.json.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(keep, indent=2))
+        os.replace(tmp, store.reminders_path)
+        for o in old:
+            out(f"removed old routine #{o['id']}; its text was: {o['text']}")
+    for argv in after:
+        try:
+            r = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+            out((r.stdout or r.stderr).strip()[:300] or f"{' '.join(argv[1:3])}: ok")
+        except (OSError, subprocess.SubprocessError) as e:
+            out(f"couldn't run {' '.join(argv[1:3])}: {e}")
+    out("Done. Undo: walterctl addon off verse-of-the-day, walterctl config set dashboard.verse_line true, "
+        "and recreate the old routine with walterctl every (text above).")
+    return 0
+
+
+def verse_on(store: "Addons | None" = None) -> bool:
+    """Is the verse-of-the-day add-on ON? (bin/walter-dashboard: the verse line under the clock is
+    shown when it is, or when the old [dashboard] verse_line is true.) Never raises."""
+    try:
+        s = store or Addons()
+        return s.state_path.exists() and s.is_on(VERSE_ID)
+    except Exception:
+        return False
+
+
 # ------------------------------------------------------------------ helpers for the rest of Walter
 def _cfg_addons() -> dict:
     try:
@@ -1222,6 +1346,8 @@ walterctl addon secret ID KEY              private phone page (QR on the wall) t
 walterctl addon updates | update ID [--yes] | remove ID
 walterctl addon run ID CMD [ARGS...]       run one of an ON add-on's commands
 walterctl addon pack DIR                   sha256 of a folder as the catalog computes it
+walterctl addon migrate-verse [--from DIR] [--used FILE] [--yes]
+                                           old verse routine + verse_line -> the verse-of-the-day add-on
 Exit 3 = needs a yes: ask the owner out loud, then repeat with --yes."""
 
 
@@ -1358,6 +1484,15 @@ def cli(argv: list[str], store: Addons | None = None) -> int:
         if sub in ("remove", "uninstall") and rest:
             print(f"{rest[0]} removed (and its secrets)." if s.remove(rest[0]) else f"{rest[0]} wasn't installed.")
             return 0
+        if sub == "migrate-verse":
+            src = used = None
+            it = iter(rest)
+            for a in it:
+                if a == "--from":
+                    src = Path(next(it, "")).expanduser()
+                elif a == "--used":
+                    used = Path(next(it, "")).expanduser()
+            return migrate_verse(s, yes=yes, src=src, used=used)
         if sub == "run" and len(rest) >= 2:
             argv2, env, cwd = s.run_argv(rest[0], rest[1], rest[2:], walled=current_walled())
             return subprocess.call(argv2, env=env, cwd=str(cwd))

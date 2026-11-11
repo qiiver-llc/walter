@@ -719,3 +719,71 @@ def test_routines_no_reminders_file_and_env(routined):
     assert len(_rem(s)) == 2
     env = s.addon_env("daily-thing", s.installed("daily-thing"))
     assert env["WALTER_ADDON_DATA"].endswith("addons-data/daily-thing")
+
+
+# ------------------------------------------------------------------ verse migration (local catalog checkout)
+VERSE_TOML = ROUTINE_TOML.replace('id = "daily-thing"', 'id = "verse-of-the-day"').replace(
+    "[[settings]]\nkey = \"flavour\"", "[[settings]]\nkey = \"translation\"").replace(
+    'choices = ["plain", "spicy"]\ndefault = "plain"', 'choices = ["KJV or WEB", "KJV"]\ndefault = "KJV or WEB"').replace(
+    "${setting.flavour}", "${setting.translation}").replace(
+    '[[routines]]\nwhen = "weekdays 18:00"\nprompt = "Evening check."\n',
+    '[cli]\nimport = "bin/import.sh"\n').replace('permissions = []', 'permissions = ["run_commands"]')
+
+
+@pytest.fixture
+def verse_world(tmp_path):
+    cat = tmp_path / "catalog"
+    folder = cat / "addons" / "verse-of-the-day"
+    write_tree(folder, {"addon.toml": VERSE_TOML, "SKILL.md": "verse\n",
+                        "bin/import.sh": ('#!/bin/sh\nmkdir -p "$WALTER_ADDON_DATA"\ncp "$1" "$WALTER_ADDON_DATA/used.tsv"\n'
+                                          'echo imported\n', 0o755)})
+    (cat / "index.json").write_text(json.dumps({"format": 1, "addons": [
+        {"id": "verse-of-the-day", "permissions": ["run_commands"], "sha256": A.pack_sha256(folder)}]}))
+    data = tmp_path / "data"
+    write_tree(data / "home" / "journal", {"verses-used.txt": "Joshua 1:9\n"})
+    old = {"id": 34, "due": time.time() + 600, "kind": "do", "workspace": "home",
+           "text": "SILENT daily verse (never speak). ... list in ~/.walter/home/journal/verses-used.txt ...",
+           "repeat": {"days": list(range(7)), "time": "06:30"}}
+    mine = {"id": 7, "due": time.time() + 3600, "text": "morning briefing", "kind": "do",
+            "repeat": {"days": [0, 1, 2, 3, 4], "time": "08:00"}}
+    (data / "reminders.json").write_text(json.dumps([old, mine]))
+    store = A.Addons(data, catalog_url="http://127.0.0.1:9/index.json", repo="o/r", branch="main")
+    return store, folder, data
+
+
+def test_migrate_verse_dry_run_changes_nothing(verse_world):
+    store, folder, data = verse_world
+    before = (data / "reminders.json").read_text()
+    lines = []
+    assert A.migrate_verse(store, yes=False, src=folder, after=[], out=lines.append) == 3
+    assert any("#34" in l for l in lines) and any("06:30" in l for l in lines)
+    assert (data / "reminders.json").read_text() == before and store.installed("verse-of-the-day") is None
+
+
+def test_migrate_verse_does_it(verse_world):
+    store, folder, data = verse_world
+    lines = []
+    assert A.migrate_verse(store, yes=True, src=folder, after=[], out=lines.append) == 0
+    m = store.installed("verse-of-the-day")
+    assert m and m["source"]["origin"] == "catalog" and store.is_on("verse-of-the-day") and A.verse_on(store)
+    items = json.loads((data / "reminders.json").read_text())
+    assert [i["id"] for i in items if not i.get("addon")] == [7]          # old one gone, mine untouched
+    ours = [i for i in items if i.get("addon") == "verse-of-the-day"]
+    assert len(ours) == 1 and ours[0]["repeat"]["time"] == "06:30" and "KJV or WEB" in ours[0]["text"]
+    assert (data / "addons-data" / "verse-of-the-day" / "used.tsv").read_text() == "Joshua 1:9\n"
+    assert (data / "home" / "journal" / "verses-used.txt").exists()       # the old file stays
+    assert any("its text was" in l for l in lines)
+    # again: nothing left to migrate, nothing duplicated
+    assert A.migrate_verse(store, yes=True, src=folder, after=[], out=lines.append) == 0
+    assert len([i for i in json.loads((data / "reminders.json").read_text()) if i.get("addon")]) == 1
+    store.disable("verse-of-the-day")
+    assert not A.verse_on(store)
+    assert [i["id"] for i in json.loads((data / "reminders.json").read_text())] == [7]
+
+
+def test_install_local_needs_matching_catalog_sha(verse_world):
+    store, folder, data = verse_world
+    (folder / "SKILL.md").write_text("changed after the index was built\n")
+    with pytest.raises(A.AddonError) as e:
+        A.install_local(store, folder)
+    assert e.value.code == "sha_mismatch"
