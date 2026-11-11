@@ -9,6 +9,7 @@ range_list=$(while read -r lref lsha rref rsha; do
 done)
 for r in $range_list; do
   added=$(git log -p --no-color "$r" -- . | grep -E '^\+' | grep -vE '^\+\+\+' || true)
+  range_files=$(git log --name-only --format= "$r" -- . | sort -u)
   # real-looking secrets (not the documented prefixes like "sk-ant-oat...")
   if echo "$added" | grep -nE '(sk-ant-[A-Za-z0-9]{2,8}-[A-Za-z0-9_-]{20,}|github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{30,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|"accessToken" *: *"[^"]{20,})'; then
     echo "pre-push: possible secret above. Push blocked." >&2; fail=1; fi
@@ -25,5 +26,11 @@ for r in $range_list; do
   # personal words listed (one per line) in ~/.walter/private-words.txt
   if [ -f "$HOME/.walter/private-words.txt" ] && echo "$added" | grep -niwFf "$HOME/.walter/private-words.txt"; then
     echo "pre-push: personal info above (from ~/.walter/private-words.txt). Push blocked." >&2; fail=1; fi
+  # owner-specific terms found by the privacy audit (business names, town, schools, teams, coordinates)
+  if [ -f "$HOME/.walter/private-words-extra.txt" ] && echo "$added" | grep -niwFf <(grep -v '^[[:space:]]*$' "$HOME/.walter/private-words-extra.txt"); then
+    echo "pre-push: owner-specific terms above (from ~/.walter/private-words-extra.txt). Push blocked." >&2; fail=1; fi
+  # private files that must never reach the public repo
+  if echo "$range_files" | grep -E '^(tools/tunnel-broker/|tests/fixtures/nsaa/|tests/test_hs_sports\.py$|docs/SUPPORT-PLAYBOOK\.md$)'; then
+    echo "pre-push: private files above (they live in the private branch). Push blocked." >&2; fail=1; fi
 done
 exit $fail
