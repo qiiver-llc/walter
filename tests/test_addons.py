@@ -616,3 +616,106 @@ def test_app_api(two, gh, tmp_path):
             assert r.status == 400
 
     asyncio.run(go())
+
+
+# ------------------------------------------------------------------ [[routines]] while ON
+ROUTINE_TOML = """\
+id = "daily-thing"
+name = "Daily thing"
+version = "1.0.0"
+description = "Does a thing every morning."
+permissions = []
+[[settings]]
+key = "time"
+label = "Time of day"
+type = "string"
+default = "06:30"
+[[settings]]
+key = "flavour"
+label = "Flavour"
+type = "choice"
+choices = ["plain", "spicy"]
+default = "plain"
+[[routines]]
+when = "daily ${setting.time}"
+prompt = "SILENT: do the ${setting.flavour} thing."
+[[routines]]
+when = "weekdays 18:00"
+prompt = "Evening check."
+"""
+
+
+@pytest.fixture
+def routined(tmp_path):
+    data = tmp_path / "data"
+    write_tree(data / "addons" / "daily-thing", {"addon.toml": ROUTINE_TOML, "SKILL.md": "x\n"})
+    mine = [{"id": 7, "due": time.time() + 3600, "text": "my own routine", "kind": "do",
+             "repeat": {"days": [0, 1, 2, 3, 4, 5, 6], "time": "08:00"}}]
+    (data / "reminders.json").write_text(json.dumps(mine))
+    return A.Addons(data, catalog_url="http://127.0.0.1:9/index.json", repo="o/r", branch="main")
+
+
+def _rem(store):
+    return json.loads(store.reminders_path.read_text())
+
+
+def test_routine_when_parsing_and_validation():
+    assert A.parse_routine_when("daily 6:30") == {"days": list(range(7)), "time": "06:30"}
+    assert A.parse_routine_when("mon,wed 18:05") == {"days": [0, 2], "time": "18:05"}
+    assert A.parse_routine_when("weekends 07:00")["days"] == [5, 6]
+    for bad in ("daily", "someday 06:30", "daily 25:00", "daily 6pm"):
+        with pytest.raises(A.AddonError):
+            A.parse_routine_when(bad)
+    import tomllib
+    m, errs = A.validate_manifest(tomllib.loads(ROUTINE_TOML))
+    assert errs == [] and len(m["routines"]) == 2
+    _, errs = A.validate_manifest(tomllib.loads(ROUTINE_TOML.replace("${setting.flavour}", "${setting.nope}")))
+    assert any("nope" in e for e in errs)
+    _, errs = A.validate_manifest(tomllib.loads(ROUTINE_TOML.replace("weekdays 18:00", "fortnightly 18:00")))
+    assert any("routines" in e for e in errs)
+
+
+def test_routines_exist_only_while_on_and_never_touch_mine(routined):
+    s = routined
+    s.enable("daily-thing")
+    items = _rem(s)
+    mine = [i for i in items if not i.get("addon")]
+    ours = sorted((i for i in items if i.get("addon")), key=lambda i: i["addon_routine"])
+    assert [i["id"] for i in mine] == [7]
+    assert [i["id"] for i in ours] == [8, 9] and all(i["addon"] == "daily-thing" and i["kind"] == "do" for i in ours)
+    assert ours[0]["repeat"] == {"days": list(range(7)), "time": "06:30"}
+    assert ours[0]["text"] == "SILENT: do the plain thing." and ours[0]["due"] > time.time()
+    # enabling again (or any other save) changes nothing, and a paused one stays paused
+    items[[i["id"] for i in items].index(8)]["enabled"] = False
+    s.reminders_path.write_text(json.dumps(items))
+    s.enable("daily-thing")
+    assert next(i for i in _rem(s) if i["id"] == 8).get("enabled") is False
+    s.disable("daily-thing")
+    assert [i["id"] for i in _rem(s)] == [7]
+
+
+def test_routines_follow_settings_and_kill_switch(routined):
+    s = routined
+    s.enable("daily-thing")
+    s.set_setting("daily-thing", "time", "05:45")
+    s.set_setting("daily-thing", "flavour", "spicy")
+    ours = [i for i in _rem(s) if i.get("addon_routine") == 0]
+    assert len(ours) == 1 and ours[0]["repeat"]["time"] == "05:45" and "spicy" in ours[0]["text"]
+    s.set_setting("daily-thing", "time", "not a time")     # a bad value: that routine is skipped, no crash
+    assert [i.get("addon_routine") for i in _rem(s) if i.get("addon")] == [1]
+    s.disable_all()
+    assert [i["id"] for i in _rem(s)] == [7]
+    s.enable("daily-thing")
+    s.remove("daily-thing")
+    assert [i["id"] for i in _rem(s)] == [7]
+
+
+def test_routines_no_reminders_file_and_env(routined):
+    s = routined
+    s.reminders_path.unlink()
+    s.disable("daily-thing")                                # nothing on: no file is created
+    assert not s.reminders_path.exists()
+    s.enable("daily-thing")
+    assert len(_rem(s)) == 2
+    env = s.addon_env("daily-thing", s.installed("daily-thing"))
+    assert env["WALTER_ADDON_DATA"].endswith("addons-data/daily-thing")

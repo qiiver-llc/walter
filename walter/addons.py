@@ -121,6 +121,56 @@ def _rel_ok(p) -> bool:
     return not pp.is_absolute() and ".." not in pp.parts and str(pp) not in ("", ".")
 
 
+# ------------------------------------------------------------------ [[routines]]
+# An add-on's routines are ordinary `walterctl every` routines in ~/.walter/reminders.json, tagged
+# {"addon": "<id>", "addon_routine": <n>}: they exist exactly while the add-on is ON (Addons.sync_routines
+# runs after every on/off/settings/update/remove) and the owner's own routines are never touched.
+DAY_NAMES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+NAMED_DAYS = {"daily": range(7), "everyday": range(7), "weekdays": range(5), "weekends": (5, 6)}
+SETTING_REF_RE = re.compile(r"\$\{setting\.([a-z][a-z0-9_]{0,39})\}")
+
+
+def parse_routine_when(when: str) -> dict:
+    """'daily 06:30' | 'weekdays 7:30' | 'mon,wed,fri 18:00' -> {"days": [0..6], "time": "HH:MM"}."""
+    parts = str(when or "").lower().split()
+    if len(parts) != 2:
+        raise AddonError(f"when '{str(when)[:40]}' should look like 'daily 06:30' or 'mon,fri 18:00'", "bad_when")
+    d, t = parts
+    if d in NAMED_DAYS:
+        days = list(NAMED_DAYS[d])
+    else:
+        try:
+            days = sorted({DAY_NAMES.index(x.strip()[:3]) for x in d.split(",") if x.strip()})
+        except ValueError:
+            days = []
+        if not days:
+            raise AddonError(f"when '{when[:40]}': days are daily, weekdays, weekends or mon,wed,...", "bad_when")
+    mt = re.fullmatch(r"(\d{1,2}):(\d{2})", t)
+    if not mt or int(mt.group(1)) > 23 or int(mt.group(2)) > 59:
+        raise AddonError(f"when '{when[:40]}': the time must be HH:MM (24-hour)", "bad_when")
+    return {"days": days, "time": f"{int(mt.group(1)):02d}:{mt.group(2)}"}
+
+
+def next_occurrence(days: list[int], hhmm: str, after: float) -> float:
+    """Same rule as walter.conductor.next_occurrence (kept here so add-ons don't import the conductor)."""
+    import datetime as dt
+    h, mi = (int(x) for x in hhmm.split(":"))
+    base = dt.datetime.fromtimestamp(after)
+    for add in range(0, 8):
+        d = (base + dt.timedelta(days=add)).replace(hour=h, minute=mi, second=0, microsecond=0)
+        if d.weekday() in days and d.timestamp() > after:
+            return d.timestamp()
+    raise AddonError("no matching day", "bad_when")
+
+
+def fill_settings(text: str, settings: dict) -> str:
+    """${setting.KEY} -> the add-on's current value of that setting."""
+    def one(mt):
+        v = settings.get(mt.group(1), "")
+        return ("true" if v else "false") if isinstance(v, bool) else str(v)
+    return SETTING_REF_RE.sub(one, text)
+
+
 def validate_manifest(raw: dict, folder: Path | None = None) -> tuple[dict, list[str]]:
     """(clean manifest, errors). With `folder`, also checks SKILL.md and the scripts it points at."""
     errs: list[str] = []
@@ -240,11 +290,23 @@ def validate_manifest(raw: dict, folder: Path | None = None) -> tuple[dict, list
         routines = routines.get("list", [routines] if "when" in routines else [])
     m["routines"] = []
     if isinstance(routines, list):
+        keys = {s["key"] for s in m["settings"]}
         for r in routines[:10]:
-            if isinstance(r, dict) and isinstance(r.get("when"), str) and isinstance(r.get("prompt"), str):
-                m["routines"].append({"when": r["when"][:60], "prompt": r["prompt"][:2000]})
-            else:
+            if not (isinstance(r, dict) and isinstance(r.get("when"), str) and isinstance(r.get("prompt"), str)
+                    and r["when"].strip() and r["prompt"].strip()):
                 errs.append("routines: each needs when and prompt")
+                continue
+            unknown = sorted({k for f in ("when", "prompt") for k in SETTING_REF_RE.findall(r[f])} - keys)
+            if unknown:
+                errs.append(f"routines: ${{setting.{unknown[0]}}} isn't one of the add-on's settings")
+                continue
+            if not SETTING_REF_RE.search(r["when"]):
+                try:
+                    parse_routine_when(r["when"])
+                except AddonError as e:
+                    errs.append(f"routines: {e}")
+                    continue
+            m["routines"].append({"when": r["when"][:60], "prompt": r["prompt"][:2000]})
 
     if folder is not None:
         if not (folder / "SKILL.md").is_file():
@@ -534,6 +596,8 @@ class Addons:
         self.state_path = self.data / "addons.json"
         self.secrets_dir = self.data / "addons-secrets"
         self.mcp_path = self.data / "addons-mcp.json"
+        self.reminders_path = self.data / "reminders.json"     # walter.conductor.Reminders' file
+        self.addon_data_dir = self.data / "addons-data"        # each add-on's own data: addons-data/<id>/
         cat = _cfg_addons() if (catalog_url is None or repo is None or branch is None) else {}
         self.catalog_url = catalog_url or cat.get("catalog") or DEFAULT_CATALOG
         self.repo = repo or cat.get("repo") or DEFAULT_REPO
@@ -554,6 +618,7 @@ class Addons:
     def _save(self, d: dict):
         _write_json(self.state_path, d)
         self.write_mcp(d)
+        self.sync_routines(d)
 
     def is_on(self, aid: str, st: dict | None = None) -> bool:
         return aid in (st or self.state())["enabled"] and self.installed(aid) is not None
@@ -851,6 +916,7 @@ class Addons:
                 self.disable(aid)
             else:
                 self.write_mcp()
+                self.sync_routines()
             log.info("add-on %s %s %s from %s@%s", aid, "updated to" if old else "installed", m["version"],
                      source["repo"], source["commit"][:10])
             return {**self.describe({**m, "source": source}), "updated": bool(old), "permissions_grew": grew}
@@ -972,9 +1038,78 @@ class Addons:
             log.exception("add-ons: couldn't write the MCP config")
         return self.mcp_path
 
+    # ---------------------------------------------------------- [[routines]] while ON
+    def wanted_routines(self, st: dict | None = None) -> list[dict]:
+        """The routines the add-ons that are ON ask for, with their settings filled in."""
+        st = st or self.state()
+        out = []
+        for aid in sorted(st["enabled"]):
+            m = self.installed(aid)
+            if not m or not m.get("routines"):
+                continue
+            vals = self.settings_of(aid, m, st)
+            for n, r in enumerate(m["routines"]):
+                try:
+                    rep = parse_routine_when(fill_settings(r["when"], vals))
+                except AddonError as e:
+                    log.warning("add-on %s routine %d skipped: %s", aid, n, e)
+                    continue
+                out.append({"addon": aid, "addon_routine": n, "kind": "do", "repeat": rep,
+                            "text": fill_settings(r["prompt"], vals)})
+        return out
+
+    def sync_routines(self, st: dict | None = None) -> dict:
+        """Make reminders.json hold exactly the routines of the add-ons that are ON. Only items tagged
+        "addon" are ever added or removed; a matching one is kept as it is (so a paused one stays paused).
+        The running Walter re-reads the file within 5 s (Reminders.reload_if_changed). Never raises."""
+        res = {"added": [], "removed": []}
+        try:
+            want = self.wanted_routines(st)
+            items = _read_json(self.reminders_path, None)
+            if items is None:
+                if not want:
+                    return res
+                items = []
+            if not isinstance(items, list):
+                log.warning("add-ons: reminders.json isn't a list; leaving it alone")
+                return res
+            wanted = {(w["addon"], w["addon_routine"]): w for w in want}
+            keep, have = [], set()
+            for it in items:
+                if not isinstance(it, dict) or not it.get("addon"):
+                    keep.append(it)                      # the owner's own: never touched
+                    continue
+                key = (it.get("addon"), it.get("addon_routine"))
+                w = wanted.get(key)
+                if w and key not in have and it.get("text") == w["text"] and it.get("repeat") == w["repeat"]:
+                    keep.append(it)
+                    have.add(key)
+                else:
+                    res["removed"].append(it.get("id"))
+            now = time.time()
+            nid = max([i.get("id", 0) for i in items if isinstance(i, dict) and isinstance(i.get("id"), int)],
+                      default=0)
+            for key, w in wanted.items():
+                if key in have:
+                    continue
+                nid += 1
+                keep.append({"id": nid, "due": next_occurrence(w["repeat"]["days"], w["repeat"]["time"], now), **w})
+                res["added"].append(nid)
+            if res["added"] or res["removed"]:
+                keep.sort(key=lambda i: i.get("due", 0) if isinstance(i, dict) else 0)
+                self.reminders_path.parent.mkdir(parents=True, exist_ok=True)
+                tmp = self.reminders_path.with_name(f".reminders.json.{os.getpid()}.tmp")
+                tmp.write_text(json.dumps(keep, indent=2))
+                os.replace(tmp, self.reminders_path)
+                log.info("add-on routines: +%s -%s", res["added"], res["removed"])
+        except Exception:
+            log.exception("add-ons: couldn't sync routines")
+        return res
+
     # ---------------------------------------------------------- scripts
     def addon_env(self, aid: str, m: dict, st: dict | None = None) -> dict:
         return {"WALTER_ADDON_ID": aid, "WALTER_ADDON_DIR": str(self.dir / aid),
+                "WALTER_ADDON_DATA": str(self.addon_data_dir / aid),
                 "WALTER_ADDON_SECRETS": str(self.secrets_dir / aid),
                 "WALTER_ADDON_SETTINGS": json.dumps(self.settings_of(aid, m, st), sort_keys=True)}
 

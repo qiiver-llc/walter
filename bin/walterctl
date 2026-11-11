@@ -2187,6 +2187,7 @@ def main(argv):
             kind = "do" if r.get("kind") == "do" else "remind"
             paused = "  (paused)" if r.get("enabled") is False else ""
             proj = f"  [{r['workspace']}]" if r.get("workspace") else ""
+            proj += f"  [add-on {r['addon']}]" if r.get("addon") else ""   # comes and goes with the add-on
             print(f"#{r['id']}  [{kind}]  {when}{paused}{proj}  {r['text']}")
     elif cmd in ("pause", "resume"):
         if len(rest) != 1 or not rest[0].lstrip("#").isdigit():
