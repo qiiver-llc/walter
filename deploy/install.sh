@@ -21,7 +21,7 @@
 # ~walter/.walter-releases/<version> and carries on from there.
 #
 # Options:
-#   --invite CODE            beta invite (opaque; stored for the Cloud Link broker, not checked yet)
+#   --invite CODE            beta invite (stored; the first-run wizard's Cloud Link step uses it)
 #   --channel URL            update channel (same as WALTER_UPDATE_URL; bootstrap
 #                            default: https://releases.wallter.app)
 #   --permission-mode MODE   brain permission mode for a NEW config: acceptEdits (safer,
@@ -126,6 +126,25 @@ for fw in firmware-iwlwifi firmware-realtek firmware-atheros firmware-brcm80211;
     echo "note: $fw not available (enable non-free-firmware in apt sources if this Wi-Fi card needs it)"
   fi
 done
+
+# cloudflared for Cloud Link (optional; docs/CLOUD-LINK.md): from Cloudflare's own signed apt
+# repo. It only runs if the owner turns Cloud Link on. WALTER_CLOUDFLARED=0 skips it; a failure
+# here never stops the install.
+if [[ "${WALTER_CLOUDFLARED:-1}" != 0 ]] && ! command -v cloudflared >/dev/null; then
+  say "Adding cloudflared (for the optional Cloud Link)"
+  if install -d -m 0755 /usr/share/keyrings \
+     && curl -fsSL --max-time 30 https://pkg.cloudflare.com/cloudflare-main.gpg -o /usr/share/keyrings/cloudflare-main.gpg.tmp \
+     && mv /usr/share/keyrings/cloudflare-main.gpg.tmp /usr/share/keyrings/cloudflare-main.gpg \
+     && chmod 644 /usr/share/keyrings/cloudflare-main.gpg \
+     && echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main' \
+          > /etc/apt/sources.list.d/cloudflared.list \
+     && apt-get update && apt-get install -y --no-install-recommends cloudflared; then
+    echo "cloudflared $(cloudflared --version 2>/dev/null | head -1)"
+  else
+    rm -f /usr/share/keyrings/cloudflare-main.gpg.tmp /etc/apt/sources.list.d/cloudflared.list   # never break later apt runs
+    echo "note: cloudflared not installed (Cloud Link stays unavailable until it is)"
+  fi
+fi
 
 say "Creating user '$WALTER_USER'"
 if ! id "$WALTER_USER" &>/dev/null; then
@@ -333,7 +352,7 @@ mkdir -p /etc/walter
 if [[ -n "$UPDATE_URL" ]] && ! grep -q '^WALTER_UPDATE_URL=' /etc/walter/update.conf; then
   printf 'WALTER_UPDATE_URL=%q\n' "$UPDATE_URL" >> /etc/walter/update.conf
 fi
-# Beta invite code: opaque, kept for the Cloud Link broker later (not validated yet).
+# Beta invite code: kept for the first-run wizard's Cloud Link step (claimed only if the owner says so).
 if [[ -n "$INVITE" ]]; then
   printf '%s\n' "$INVITE" > /etc/walter/invite
   chown "root:$WALTER_USER" /etc/walter/invite && chmod 640 /etc/walter/invite

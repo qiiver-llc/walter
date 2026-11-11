@@ -9,4 +9,5 @@ opencv-python-headless>=4.8,<5   # presence camera (5.x dropped the Haar face ca
 sherpa-onnx>=1.10       # speaker embeddings for voice recognition (people.py)
 audiotsm>=0.1.2
 pywebpush>=2.0         # Web Push to the companion app (reminders reach a closed app); optional
+cryptography>=41       # Ed25519 install key for Cloud Link (cloud_link.py); also pulled in by pywebpush
 zeroconf>=0.130        # mDNS: faces find the brain (face_server.advertise, docs/FACES.md); optional
