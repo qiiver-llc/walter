@@ -148,10 +148,14 @@
   </section>
 
   <section class="step" data-step="cloudlink">
-    <h1>Cloud Link (optional)</h1>
+    <h1>Reach Walter from anywhere</h1>
     <div class="card">
-      <p>Use the Walter app away from home through a private link just for your household. During the beta we switch it on for you; nothing is set up until then.</p>
-      <button id="cloudYes">Yes, request Cloud Link</button>
+      <p>With Cloud Link the Walter app works on your phone away from home, through a private address just for your household. Only the app goes through it; everything else stays at home. Free during the beta.</p>
+      <p style="color:#9fb0d0;font-size:.9rem">Have an invite code? Type it here. Leave it empty to use the code you installed with. No code? Tap Skip; you can turn it on later in the app's Settings.</p>
+      <input id="cloudCode" placeholder="Invite code" maxlength="40" autocapitalize="off" autocomplete="off" spellcheck="false">
+      <button id="cloudScan" class="ghost" style="display:none">Scan the code from a photo</button>
+      <input id="cloudScanFile" type="file" accept="image/*" capture="environment" style="display:none">
+      <button id="cloudYes">Turn on Cloud Link</button>
       <div class="msg" id="cloudMsg"></div>
     </div>
   </section>
@@ -277,7 +281,32 @@ $("savekey").onclick = async () => {
   const r = await api("apikey", { data: { key: $("apikey").value.trim() } }).catch((e) => ({ message: e.message }));
   $("apikey").value = ""; say($("keyMsg"), r.message, r.ok ? "ok" : "err");
 };
-$("cloudYes").onclick = async () => { const r = await api("cloudlink", { data: { want: true } }); say($("cloudMsg"), r.message, r.ok ? "ok" : "err"); };
+$("cloudYes").onclick = async () => {
+  const b = $("cloudYes"); b.disabled = true;
+  say($("cloudMsg"), "Setting up your private link... (up to a minute)", "");
+  try {
+    const r = await api("cloudlink", { data: { want: true, code: $("cloudCode").value.trim() } });
+    say($("cloudMsg"), r.message, r.ok ? "ok" : "err");
+  } catch (err) { say($("cloudMsg"), err.message, "err"); } finally { b.disabled = false; }
+};
+// Scan: read an invite QR from a photo (BarcodeDetector: Android Chrome and some others).
+function inviteFrom(text) {
+  const m = String(text || "").match(/[?#&](?:invite|code)=([A-Za-z0-9-]+)/);
+  return (m ? m[1] : String(text || "")).trim().slice(0, 40);
+}
+if ("BarcodeDetector" in window) {
+  $("cloudScan").style.display = "block";
+  $("cloudScan").onclick = () => $("cloudScanFile").click();
+  $("cloudScanFile").onchange = async (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    try {
+      const codes = await new window.BarcodeDetector({ formats: ["qr_code"] }).detect(await createImageBitmap(f));
+      if (codes.length) { $("cloudCode").value = inviteFrom(codes[0].rawValue); say($("cloudMsg"), "Got it. Tap Turn on.", "ok"); }
+      else say($("cloudMsg"), "No code found in that photo; type it instead.", "err");
+    } catch (err) { say($("cloudMsg"), "Couldn't read that photo; type the code instead.", "err"); }
+  };
+}
 $("pairGo").onclick = async () => {
   const r = await api("paircode");
   if (!r.ok) return say($("pairHint"), r.message, "err");

@@ -10,7 +10,7 @@
     claude: ["Connect my brain", "Sign in with your own Claude account in the window on this screen, or use your own API key. I never see your password or code."],
     privacy: ["Your privacy, your choice", "Camera, cloud speech and recognition are all off unless you switch them on."],
     extras: ["A few extras", "Calendar, podcasts, your teams. All optional."],
-    cloudlink: ["Cloud Link (optional)", "Reach me from your phone when you're away from home."],
+    cloudlink: ["Reach me from anywhere", "Optional: type your invite code on your phone and my app works away from home too."],
     pair: ["Pair your phone", "Scan the pairing code to put me in your pocket."],
     hello: ["Say hello!", "Say “Hey Walter, hello”."],
   };

@@ -178,6 +178,7 @@ async def amain(args):
     from .firstrun import FirstRun, add_routes as firstrun_routes
     firstrun = FirstRun(cfg, hub.send, setup)       # first-run wizard (fresh installs only)
     conductor.firstrun = firstrun
+    firstrun.live = getattr(conductor, "live", None)
     firstrun_routes(app, firstrun, apphub)
     runner = web.AppRunner(app, shutdown_timeout=1.0)
     await runner.setup()

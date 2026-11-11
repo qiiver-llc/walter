@@ -11,9 +11,10 @@ Nine steps, shown big on the wall with a QR code so a phone can drive them:
                by default) and the worker permission mode (acceptEdits recommended)
   6 extras     optional: Google calendar connect, podcasts, sports teams, verse,
                Home Assistant address (token via the private phone page)
-  7 cloudlink  optional: request a Cloud Link tunnel (beta: the request + invite code
-               are written to /etc/walter/firstrun/ for the broker owner; this box
-               never calls Cloudflare)
+  7 cloudlink  optional "Reach Walter from anywhere": paste (or scan) a Cloud Link
+               invite code; walter/cloud_link.py claims it at the Cloud Link
+               service and starts the private tunnel (the installer's --invite code
+               is used when the box is left empty)
   8 pair       pair the phone app (6-digit code)
   9 hello      say hello + a short tour; finishing writes the done marker
 
@@ -51,7 +52,7 @@ STEPS = ("welcome", "network", "audio", "claude", "privacy", "extras", "cloudlin
 TITLES = {
     "welcome": "Welcome", "network": "Network, time and place", "audio": "Mic and speaker",
     "claude": "Connect Walter's brain", "privacy": "Privacy choices", "extras": "Extras (optional)",
-    "cloudlink": "Cloud Link (optional)", "pair": "Pair your phone", "hello": "Say hello",
+    "cloudlink": "Reach Walter from anywhere", "pair": "Pair your phone", "hello": "Say hello",
 }
 REQUIRED = ("claude",)   # can be skipped, but the wall keeps a "brain not connected" note
 PRIVACY_DEFAULTS = {"camera": False, "cloud_speech": False, "recognise_faces": False,
@@ -212,6 +213,8 @@ class FirstRun:
         self.key = "".join(secrets.choice("abcdefghjkmnpqrstuvwxyz23456789") for _ in range(10))
         self.wizard = Wizard(self.dir / "state.json")
         self.pair_store = None             # devices.DeviceStore, set by the app server
+        self.cloud_link = None             # () -> cloud_link.CloudLink (tests swap it)
+        self.live = None                   # live.Live: config changes apply without a restart
 
     # -- is it on?
     def done_marked(self) -> bool:
@@ -455,29 +458,42 @@ class FirstRun:
         self.wizard.complete("extras", out)
         return self._ok()
 
-    # 7 cloud link (request only; no Cloudflare calls from this box)
+    # 7 reach Walter from anywhere (Cloud Link, walter/cloud_link.py)
+    def _cloud_link(self):
+        if self.cloud_link is not None:
+            return self.cloud_link()
+        from . import cloud_link as CL
+        def set_url(url):
+            if self.live is not None:
+                self.live.set("app.public_url", url)
+            else:
+                self.apply_config("app.public_url", url)
+        return CL.CloudLink.from_config(self.cfg, get_public_url=lambda: self.cfg.app.public_url or "",
+                                        set_public_url=set_url)
+
     async def _do_cloudlink(self, d):
-        if not d.get("want"):
+        from . import cloud_link as CL
+        if d.get("want") is False:
             self.wizard.skip("cloudlink")
             return self._ok()
+        code = CL.clean_code(d.get("code"))
+        if not code:
+            try:
+                code = CL.clean_code((self.etc / "invite").read_text())
+            except OSError:
+                code = ""
+        if not code:
+            return self._fail("Type or scan your invite code first (or tap Skip).")
         try:
-            invite = (self.etc / "invite").read_text().strip()
-        except OSError:
-            invite = ""
-        req = {"requested_at": time.time(), "invite": invite,
-               "household": self.wizard.data("welcome").get("household", ""),
-               "walter_name": self.wizard.data("welcome").get("walter_name", "Walter"),
-               "status": "requested"}
-        try:
-            self.dir.mkdir(parents=True, exist_ok=True)
-            p = self.dir / "cloudlink-request.json"
-            fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o640)
-            with os.fdopen(fd, "w") as f:
-                json.dump(req, f, indent=1)
-        except OSError as e:
-            return self._fail(f"Couldn't save the request ({e.strerror}).")
-        self.wizard.complete("cloudlink", {"requested": True, "has_invite": bool(invite)})
-        return self._ok(message="Requested. The Walter team will switch your Cloud Link on during the beta.")
+            r = await self._cloud_link().enable(code, replace=d.get("replace") is True)
+        except CL.CloudLinkError as e:
+            return self._fail(str(e))
+        self.wizard.complete("cloudlink", {"enabled": True, "host": r["host"]})
+        self.metric("cloudlink", healthy=bool(r.get("healthy")))
+        msg = f"Done! Walter's app now works from anywhere at {r['url']}/app"
+        if not r.get("healthy"):
+            msg += " (the first connection can take a minute or two)"
+        return self._ok(message=msg + ".", url=r["url"])
 
     # 8 pair
     async def _do_paircode(self, d):
