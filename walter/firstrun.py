@@ -9,7 +9,7 @@ Nine steps, shown big on the wall with a QR code so a phone can drive them:
                (reuses walter.setup: Walter never sees Claude credentials)
   5 privacy    camera, cloud speech, face/voice recognition, admin opt-in (all off
                by default) and the worker permission mode (acceptEdits recommended)
-  6 extras     optional: Google calendar connect, podcasts, sports teams, verse,
+  6 extras     optional: Google calendar connect, podcasts, sports teams,
                Home Assistant address (token via the private phone page)
   7 cloudlink  optional "Reach Walter from anywhere": paste (or scan) a Cloud Link
                invite code; walter/cloud_link.py claims it at the Cloud Link

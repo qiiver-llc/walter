@@ -147,7 +147,6 @@ phone_page = true
 # sports_teams = ["nfl/gb", "mlb/nyy"]   # ESPN "league/team" slugs; [] hides the row
 # hs_teams = [ { sport = "football", school = "Example", class = "B", sid = 1, abbr = "EXA" } ]
 # calendar_colors = { Main = "#5fa8ff", Family = "#6fd49a" }   # fixed colours per calendar label
-# verse_line = false     # show today's "Verse: <text> - <reference>" note under the clock
 
 [app]
 # Companion app for phone and computer at http://<walter-ip>:8765/app (app/README.md).

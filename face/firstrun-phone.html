@@ -141,7 +141,6 @@
         <small>A QR code appears on Walter; you approve on your phone. Read-only email.</small></span></label>
       <h2>Podcasts to follow</h2><input id="x_pods" placeholder="Show names, separated by commas">
       <h2>Teams you follow</h2><input id="x_teams" placeholder="e.g. Packers, Yankees">
-      <label class="check"><input type="checkbox" id="x_verse"><span>A verse of the day on the dashboard</span></label>
       <h2>Home Assistant (optional)</h2><input id="x_ha" placeholder="e.g. http://homeassistant.local:8123" autocapitalize="off" spellcheck="false">
       <button data-do="extras">Next</button>
     </div>
@@ -230,7 +229,7 @@ function collect(step) {
   }
   if (step === "extras") {
     const list = (s) => s.split(",").map((x) => x.trim()).filter(Boolean);
-    return { google: $("x_google").checked, podcasts: list($("x_pods").value), teams: list($("x_teams").value), verse: $("x_verse").checked, homeassistant_url: $("x_ha").value.trim() };
+    return { google: $("x_google").checked, podcasts: list($("x_pods").value), teams: list($("x_teams").value), homeassistant_url: $("x_ha").value.trim() };
   }
   if (step === "pair") return { paired: true };
   return {};

@@ -40,7 +40,7 @@ and revisited later from the app: **Settings > Setup > Revisit setup steps**.
 5. **Privacy choices**: camera, cloud speech, face and voice recognition and full admin
    rights are all **off** unless you tick them; helpers' permission mode defaults to
    `acceptEdits` (recommended for the beta).
-6. **Extras**: Google calendar (phone approval), podcasts to follow, your teams, a verse.
+6. **Extras**: Google calendar (phone approval), podcasts to follow, your teams. (More, like a verse of the day, are add-ons: app Settings > Add-ons.)
 7. **Cloud Link**: ask for remote access. In the beta this only saves a request (with your
    invite code) on the box, in `/etc/walter/firstrun/cloudlink-request.json`; the Walter team
    switches it on. Your Walter makes no Cloudflare calls itself.
