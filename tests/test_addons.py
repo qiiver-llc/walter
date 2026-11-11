@@ -542,3 +542,73 @@ def test_broken_and_foreign_folders(store):
 def test_turn_note_is_empty_without_state(tmp_path):
     s = A.Addons(tmp_path, catalog_url="http://x/index.json", repo="a/b", branch="main")
     assert A.turn_note(store=s) == "" and A.mcp_config_arg(s) == []
+
+
+# ------------------------------------------------------------------ app API (walter/app_addons.py)
+def test_app_api(two, gh, tmp_path):
+    import asyncio
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+    from walter import app_addons
+
+    class Hub:
+        def auth(self, request):
+            if request.headers.get("Authorization") != "Bearer ok":
+                raise web.HTTPUnauthorized()
+            return {"name": "Phone"}
+
+    async def json_body(request, limit):
+        return await request.json()
+
+    drops = []
+    routes = web.RouteTableDef()
+    app_addons.add_routes(routes, Hub(), json_body, make=lambda: two,
+                          start_drop=lambda s, aid, key: drops.append((aid, key)) or "http://10.0.0.2:8768/x/")
+    app = web.Application()
+    app.add_routes(routes)
+    H = {"Authorization": "Bearer ok"}
+    gh.repos["someone/thing"] = {"refs": {"HEAD": COMMIT}, "commits": {COMMIT: (
+        {"addon.toml": LOCAL_TOML.replace('"notes"', '"thing"'), "SKILL.md": "x", "README.md": "x"}, None)}}
+
+    async def go():
+        async with TestClient(TestServer(app)) as c:
+            assert (await c.get("/api/app/addons")).status == 401
+            j = await (await c.get("/api/app/addons", headers=H)).json()
+            assert {a["id"] for a in j["addons"]} == {"boxes", "notes"} and j["walled"] is False
+            r = await c.post("/api/app/addons", json={"action": "on", "id": "boxes"}, headers=H)
+            j = await r.json()
+            assert r.status == 409 and j["needs_confirm"] and any(p["danger"] for p in j["permissions"])
+            assert not two.is_on("boxes")
+            r = await c.post("/api/app/addons", json={"action": "on", "id": "boxes", "confirm": True}, headers=H)
+            assert r.status == 200 and two.is_on("boxes") and (await r.json())["mcp_note"]
+            r = await c.post("/api/app/addons", json={"action": "setting", "id": "boxes", "key": "size",
+                                                      "value": "large"}, headers=H)
+            assert r.status == 200 and two.settings_of("boxes")["size"] == "large"
+            r = await c.post("/api/app/addons", json={"action": "setting", "id": "boxes", "key": "size",
+                                                      "value": "huge"}, headers=H)
+            assert r.status == 400
+            r = await c.post("/api/app/addons", json={"action": "secret", "id": "boxes", "key": "token"}, headers=H)
+            assert (await r.json())["url"].startswith("http") and drops == [("boxes", "token")]
+            cat = await (await c.get("/api/app/addons/catalog", headers=H)).json()
+            assert all(e["installed"] for e in cat["addons"])
+            r = await c.post("/api/app/addons", json={"action": "preview", "url": "someone/thing"}, headers=H)
+            p = (await r.json())["preview"]
+            assert p["id"] == "thing" and "Not made by Qiiver" in p["warning"]
+            r = await c.post("/api/app/addons", json={"action": "add", "url": "someone/thing"}, headers=H)
+            assert r.status == 409 and two.installed("thing") is None
+            r = await c.post("/api/app/addons", json={"action": "add", "url": "someone/thing", "commit": p["commit"],
+                                                      "confirm": True}, headers=H)
+            assert r.status == 200 and two.installed("thing")["source"]["commit"] == COMMIT
+            r = await c.post("/api/app/addons", json={"action": "add", "url": "https://evil.example/a/b",
+                                                      "confirm": True}, headers=H)
+            assert r.status == 400
+            assert (await c.post("/api/app/addons", json={"action": "off_all"}, headers=H)).status == 409
+            r = await c.post("/api/app/addons", json={"action": "off_all", "confirm": True}, headers=H)
+            assert (await r.json())["turned_off"] == ["boxes"] and not two.state()["enabled"]
+            assert (await c.post("/api/app/addons", json={"action": "remove", "id": "thing"}, headers=H)).status == 409
+            r = await c.post("/api/app/addons", json={"action": "remove", "id": "thing", "confirm": True}, headers=H)
+            assert r.status == 200 and two.installed("thing") is None
+            r = await c.post("/api/app/addons", json={"action": "on", "id": "../x"}, headers=H)
+            assert r.status == 400
+
+    asyncio.run(go())

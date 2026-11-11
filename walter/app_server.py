@@ -1000,6 +1000,9 @@ def add_routes(app: web.Application, cfg: Config, hub, apphub: AppHub, conductor
     # Settings > Cloud Link: on with an invite code / off / rotate (app_cloud_link.py, cloud_link.py)
     from . import app_cloud_link
     apphub.cloud_link = app_cloud_link.add_routes(routes, apphub, json_body, cfg, conductor)
+    # Settings > Add-ons: on/off, permissions, settings, secret page, catalog, add from a repo (app_addons.py, addons.py)
+    from . import app_addons
+    app_addons.add_routes(routes, apphub, json_body)
     # the Projects screen: list / switch / add / edit workspaces (app_workspaces.py, workspaces.py); no delete
     from . import app_workspaces
     app_workspaces.add_routes(routes, apphub, json_body)
